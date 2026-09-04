@@ -22,7 +22,7 @@ impl fmt::Display for DiffError {
             DiffError::EditDoesNotConsumeAllTokens { expected, consumed } => {
                 write!(
                     f,
-                    "edit script does not consume all tokens: expected {expected}, consumed {consumed}"
+                    "edit script does not consume old content: expected {expected}, consumed {consumed}"
                 )
             }
             DiffError::RetainExceedsOldTokens {
@@ -31,7 +31,7 @@ impl fmt::Display for DiffError {
             } => {
                 write!(
                     f,
-                    "retain exceeds available tokens: available {available}, requested {requested}"
+                    "retain exceeds available tokens: available {available}, requested {requested}: consumes beyond old content"
                 )
             }
             DiffError::DeleteExceedsOldTokens {
@@ -40,7 +40,7 @@ impl fmt::Display for DiffError {
             } => {
                 write!(
                     f,
-                    "delete exceeds available tokens: available {available}, requested {requested}"
+                    "delete exceeds available tokens: available {available}, requested {requested}: consumes beyond old content"
                 )
             }
             DiffError::EmptyInsert => write!(f, "insert operation cannot be empty"),

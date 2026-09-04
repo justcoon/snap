@@ -86,10 +86,16 @@ impl fmt::Display for ReplayError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReplayError::MissingBaseDependency { author, revision } => {
-                write!(f, "missing patch dependency ({author}->{revision})")
+                write!(
+                    f,
+                    "cyclic or incomplete patch history: missing patch dependency ({author}->{revision})"
+                )
             }
             ReplayError::CausalCycleOrMissingDependency => {
-                write!(f, "history contains a causal cycle or missing dependency")
+                write!(
+                    f,
+                    "cyclic or incomplete patch history: history contains a causal cycle or missing dependency"
+                )
             }
             ReplayError::TextApplicationFailed(msg) => {
                 write!(f, "failed to apply text edit: {msg}")

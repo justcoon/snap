@@ -35,6 +35,7 @@ pub enum ValidationError {
         author: ContributorId,
         revision: u64,
     },
+    DeleteOfAbsentPath(String),
     ChangeInvalidAgainstBaseTree {
         path: String,
         reason: String,
@@ -61,7 +62,7 @@ impl fmt::Display for ValidationError {
             } => {
                 write!(
                     f,
-                    "non-contiguous revision for author '{author}': expected {expected}, got {got}"
+                    "missing {author}->{expected}: non-contiguous revision for author '{author}': expected {expected}, got {got}"
                 )
             }
             ValidationError::DotCollisionDifferentPayload { author, revision } => {
@@ -73,7 +74,7 @@ impl fmt::Display for ValidationError {
             ValidationError::MissingBasePatch { author, revision } => {
                 write!(
                     f,
-                    "missing prerequisite patch ({author}->{revision}) in causal base"
+                    "missing {author}->{revision}: prerequisite patch in causal base"
                 )
             }
             ValidationError::InvalidRevisionBaseRelation {
@@ -89,8 +90,11 @@ impl fmt::Display for ValidationError {
             ValidationError::UnreachablePatch { author, revision } => {
                 write!(
                     f,
-                    "unreachable patch ({author}->{revision}) is not in causal closure of frontier"
+                    "unreachable patch: ({author}->{revision}) is not in causal closure of frontier"
                 )
+            }
+            ValidationError::DeleteOfAbsentPath(path) => {
+                write!(f, "delete of absent path: {path}")
             }
             ValidationError::ChangeInvalidAgainstBaseTree { path, reason } => {
                 write!(
@@ -235,7 +239,8 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
                         if new_bytes == base_val {
                             return Err(ValidationError::ChangeInvalidAgainstBaseTree {
                                 path: path.to_string(),
-                                reason: "text edit does not alter file content".to_string(),
+                                reason: "no-op change: text edit does not alter file content"
+                                    .to_string(),
                             });
                         }
                     }
@@ -255,17 +260,15 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
                         if existing == new_bytes {
                             return Err(ValidationError::ChangeInvalidAgainstBaseTree {
                                 path: path.to_string(),
-                                reason: "put change does not alter file content".to_string(),
+                                reason: "no-op change: put change does not alter file content"
+                                    .to_string(),
                             });
                         }
                     }
                 }
                 Change::Delete { .. } => {
                     if base_bytes.is_none() {
-                        return Err(ValidationError::ChangeInvalidAgainstBaseTree {
-                            path: path.to_string(),
-                            reason: "deleted path was not present in base tree".to_string(),
-                        });
+                        return Err(ValidationError::DeleteOfAbsentPath(path.to_string()));
                     }
                 }
             }

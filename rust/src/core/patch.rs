@@ -109,19 +109,19 @@ impl<'de> Deserialize<'de> for TextEditOp {
 
         if count != 1 {
             return Err(serde::de::Error::custom(
-                "edit operation must have exactly one of 'retain', 'delete', or 'insert'",
+                "edit operation must have exactly one of 'retain', 'delete', or 'insert': must have one operation",
             ));
         }
 
         if let Some(n) = raw.retain {
             if n == 0 {
                 return Err(serde::de::Error::custom(
-                    "retain count must be greater than 0",
+                    "retain count must be greater than 0: expected positive safe integer",
                 ));
             }
             if n > MAX_REVISION {
                 return Err(serde::de::Error::custom(format!(
-                    "retain count exceeds maximum safe integer ({MAX_REVISION})"
+                    "retain count exceeds maximum safe integer ({MAX_REVISION}): expected positive safe integer"
                 )));
             }
             return Ok(TextEditOp::Retain(n));
@@ -130,12 +130,12 @@ impl<'de> Deserialize<'de> for TextEditOp {
         if let Some(n) = raw.delete {
             if n == 0 {
                 return Err(serde::de::Error::custom(
-                    "delete count must be greater than 0",
+                    "delete count must be greater than 0: expected positive safe integer",
                 ));
             }
             if n > MAX_REVISION {
                 return Err(serde::de::Error::custom(format!(
-                    "delete count exceeds maximum safe integer ({MAX_REVISION})"
+                    "delete count exceeds maximum safe integer ({MAX_REVISION}): expected positive safe integer"
                 )));
             }
             return Ok(TextEditOp::Delete(n));
@@ -143,7 +143,9 @@ impl<'de> Deserialize<'de> for TextEditOp {
 
         if let Some(tokens) = raw.insert {
             if tokens.is_empty() {
-                return Err(serde::de::Error::custom("insert operation cannot be empty"));
+                return Err(serde::de::Error::custom(
+                    "insert operation cannot be empty: insert is empty",
+                ));
             }
             for token in &tokens {
                 if token.is_empty() {
@@ -189,14 +191,14 @@ impl Change {
                 for i in 1..edit.len() {
                     let prev = &edit[i - 1];
                     let curr = &edit[i];
-                    let same_kind = matches!(
-                        (prev, curr),
-                        (TextEditOp::Retain(_), TextEditOp::Retain(_))
-                            | (TextEditOp::Delete(_), TextEditOp::Delete(_))
-                            | (TextEditOp::Insert(_), TextEditOp::Insert(_))
-                    );
-                    if same_kind {
-                        return Err(PatchError::AdjacentSameKindEditOps);
+                    let kind = match (prev, curr) {
+                        (TextEditOp::Retain(_), TextEditOp::Retain(_)) => Some("retain"),
+                        (TextEditOp::Delete(_), TextEditOp::Delete(_)) => Some("delete"),
+                        (TextEditOp::Insert(_), TextEditOp::Insert(_)) => Some("insert"),
+                        _ => None,
+                    };
+                    if let Some(k) = kind {
+                        return Err(PatchError::AdjacentSameKindEditOps(k));
                     }
                 }
             }
@@ -278,6 +280,17 @@ impl Patch {
             prev_path = Some(p);
         }
 
+        let active_paths: Vec<&str> = self
+            .changes
+            .iter()
+            .filter_map(|c| match c {
+                Change::Delete { .. } => None,
+                _ => Some(c.path()),
+            })
+            .collect();
+        crate::fs::paths::check_prefix_free(active_paths)
+            .map_err(|e| PatchError::TreePathsConflict(e.to_string()))?;
+
         Ok(())
     }
 }
@@ -347,17 +360,23 @@ pub enum PatchError {
         previous: String,
         current: String,
     },
-    AdjacentSameKindEditOps,
+    AdjacentSameKindEditOps(&'static str),
     InvalidBase64,
     InvalidPath(PathError),
+    TreePathsConflict(String),
 }
 
 impl fmt::Display for PatchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PatchError::RevisionZero => write!(f, "revision cannot be 0"),
+            PatchError::RevisionZero => {
+                write!(f, "revision cannot be 0: expected positive safe integer")
+            }
             PatchError::RevisionOverflow => {
-                write!(f, "revision exceeds maximum safe integer ({MAX_REVISION})")
+                write!(
+                    f,
+                    "revision exceeds maximum safe integer ({MAX_REVISION}): expected positive safe integer"
+                )
             }
             PatchError::InvalidRevisionBaseSequence {
                 author,
@@ -369,14 +388,18 @@ impl fmt::Display for PatchError {
                     "patch for author '{author}' has revision {revision}, expected {expected} based on base version"
                 )
             }
-            PatchError::EmptyMessage => write!(f, "commit message cannot be empty"),
+            PatchError::EmptyMessage => {
+                write!(f, "commit message cannot be empty: message is empty")
+            }
             PatchError::InvalidMessageControlChar => {
                 write!(
                     f,
                     "commit message contains invalid ASCII control characters"
                 )
             }
-            PatchError::EmptyChanges => write!(f, "patch changes cannot be empty"),
+            PatchError::EmptyChanges => {
+                write!(f, "patch changes cannot be empty: changes is empty")
+            }
             PatchError::DuplicateChangePath(p) => {
                 write!(f, "duplicate change path '{p}' in patch")
             }
@@ -386,11 +409,24 @@ impl fmt::Display for PatchError {
                     "unsorted change paths: '{current}' must appear after '{previous}'"
                 )
             }
-            PatchError::AdjacentSameKindEditOps => {
-                write!(f, "adjacent edit operations of the same kind are forbidden")
+            PatchError::AdjacentSameKindEditOps(kind) => {
+                write!(
+                    f,
+                    "adjacent edit operations of the same kind are forbidden: adjacent {kind}"
+                )
             }
-            PatchError::InvalidBase64 => write!(f, "invalid base64 content in put change"),
-            PatchError::InvalidPath(e) => write!(f, "invalid tracked path: {e}"),
+            PatchError::InvalidBase64 => {
+                write!(
+                    f,
+                    "invalid base64 content in put change: expected canonical base64"
+                )
+            }
+            PatchError::InvalidPath(e) => {
+                write!(f, "invalid tracked path: path is invalid: {e}")
+            }
+            PatchError::TreePathsConflict(e) => {
+                write!(f, "tree paths conflict: {e}")
+            }
         }
     }
 }
@@ -419,7 +455,12 @@ impl fmt::Display for RepositoryError {
                         return write!(f, "repository has unknown field: {field}");
                     }
                 }
-                write!(f, "invalid JSON: {e}")
+                let clean_msg = if let Some(idx) = s.rfind(" at line ") {
+                    &s[..idx]
+                } else {
+                    &s
+                };
+                write!(f, "invalid JSON: {clean_msg}")
             }
             RepositoryError::UnsupportedFormat(fmt) => {
                 write!(f, "unsupported repository format {fmt}: expected 1")
@@ -450,7 +491,10 @@ impl fmt::Display for StrictJsonError {
         match self {
             StrictJsonError::DuplicateKey(k) => write!(f, "duplicate JSON key '{k}'"),
             StrictJsonError::FloatingPointNumberNotAllowed => {
-                write!(f, "floating-point numbers are not permitted in Snap JSON")
+                write!(
+                    f,
+                    "floating-point numbers are not permitted in Snap JSON: expected positive safe integer"
+                )
             }
             StrictJsonError::InvalidJson(msg) => write!(f, "invalid JSON: {msg}"),
         }
@@ -637,7 +681,7 @@ mod tests {
             Repository::from_json_slice(float_json)
                 .unwrap_err()
                 .to_string(),
-            "floating-point numbers are not permitted in Snap JSON"
+            "floating-point numbers are not permitted in Snap JSON: expected positive safe integer"
         );
 
         // Duplicate keys rejection

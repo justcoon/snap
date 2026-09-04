@@ -78,7 +78,7 @@ impl fmt::Display for PrefixFreeError {
                 descendant_path,
             } => write!(
                 f,
-                "prefix-free conflict: file '{ancestor_file}' is an ancestor of '{descendant_path}'"
+                "tree paths conflict: prefix-free conflict: file '{ancestor_file}' is an ancestor of '{descendant_path}'"
             ),
             PrefixFreeError::DuplicatePath(path) => {
                 write!(f, "duplicate path in tree: '{path}'")
