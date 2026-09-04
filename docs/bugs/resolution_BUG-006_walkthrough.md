@@ -85,6 +85,42 @@ $ cargo test --lib
 test result: ok. 52 passed; 0 failed; 0 ignored; finished in 0.21s
 ```
 
+### 4. Shared Acceptance Suite Execution
+```console
+$ ./verify --lang rust
+snap tests — candidate=/var/folders/7f/s_dm8hkd2z78nfn6r6trdw200000gn/T/snap-rust.XQmiMY, 28 case(s)
+  ✓ init creates an empty repository 1033ms
+  ✓ initialization preserves files and rejects nested or existing repositories 227ms
+  ✓ local and global contributor configuration have strict precedence 455ms
+  ✓ commit status and log expose exact deterministic history 525ms
+  ✓ diff renders canonical repeated-line edits and missing final newlines 408ms
+  ✓ binary and empty files are versioned byte exactly 314ms
+  ✓ revert is additive and restores file-directory transitions 541ms
+  ✓ working tree scans reject symlinks and special files without mutation 301ms
+  ✓ local merge converges concurrent text changes and is idempotent 624ms
+  ✓ merge applies every whole-file conflict rule with sorted warnings 555ms
+  ✓ canonical namespace winners replace conflicting files in both directions 880ms
+  ✓ server exposes one immutable repository snapshot and exits on SIGTERM 429ms
+  ✓ HTTP merge and diff use one exact validated GET without redirects 555ms
+  ✓ command grammar and common failures use stable exit channels 537ms
+  ✓ repository reader rejects malformed schemas histories paths and edits 771ms
+  ✓ cross-repository dot collisions fail before changing local state 323ms
+  ✓ concurrent creates choose the canonical later value independent of merge direction 528ms
+  ✓ three-way text history converges across different merge association orders 1394ms
+  ✓ CLI versions are canonical known causal frontiers 537ms
+  ✓ merge refuses dirty and unsupported working trees without importing history 354ms
+  ✓ vector clocks use causal closure componentwise join and canonical Snap order 713ms
+  ✓ text OT covers overlapping deletes split counts insert priority and trailing inserts 1590ms
+  ✓ repository validation rejects every malformed layer before mutation 764ms
+  ✓ every command rejects unknown misplaced duplicate and extra arguments 1000ms
+  ✓ configuration versions paths and text use their exact canonical boundaries 1079ms
+  ✓ local exchange preserves text bytes and malformed remotes never mutate 771ms
+  ✓ patch histories require exact schemas canonical order and valid base transitions 698ms
+  ✓ terminal presentation is colorful readable and explicitly controllable 1838ms
+
+28 passed in 19744ms
+```
+
 ---
 
 ## Bug Fix Discrepancy Check

@@ -114,8 +114,9 @@ pub fn fetch_repository_with_config(
         return Err(CliError::Custom(format!("HTTP {status}")));
     }
 
-    // Check for chunked transfer encoding
+    // Check for chunked transfer encoding and content length (RFC 7230 §3.3.3)
     let mut is_chunked = false;
+    let mut content_length: Option<usize> = None;
     for h in resp.headers {
         if h.name.eq_ignore_ascii_case("transfer-encoding") {
             if let Ok(val) = std::str::from_utf8(h.value) {
@@ -123,12 +124,36 @@ pub fn fetch_repository_with_config(
                     is_chunked = true;
                 }
             }
+        } else if h.name.eq_ignore_ascii_case("content-length") {
+            let val = std::str::from_utf8(h.value)
+                .map_err(|_| CliError::Custom("invalid Content-Length header".into()))?;
+            let len = val
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| CliError::Custom("invalid Content-Length header".into()))?;
+            if let Some(prev) = content_length {
+                if prev != len {
+                    return Err(CliError::Custom(
+                        "conflicting Content-Length headers".into(),
+                    ));
+                }
+            }
+            content_length = Some(len);
         }
     }
 
     let raw_body = &response_buf[body_offset..];
     let body_bytes = if is_chunked {
         decode_chunked(raw_body)?
+    } else if let Some(expected_len) = content_length {
+        // RFC 7230 §3.3.3: If fewer bytes than Content-Length received, message is truncated.
+        if raw_body.len() < expected_len {
+            return Err(CliError::Custom(format!(
+                "truncated HTTP response: expected {expected_len} bytes, received {}",
+                raw_body.len()
+            )));
+        }
+        raw_body[..expected_len].to_vec()
     } else {
         raw_body.to_vec()
     };
@@ -246,5 +271,48 @@ mod tests {
         // Chunk headers with extensions (both data chunk and last chunk)
         let chunked_with_ext = b"4;ext=dummy;foo=bar\r\ntest\r\n0;final=true\r\n\r\n";
         assert_eq!(decode_chunked(chunked_with_ext).unwrap(), b"test");
+    }
+
+    #[test]
+    fn test_regression_bug_007_content_length_truncation_and_framing() {
+        let listener = TcpListener::bind((crate::http::server::SERVER_HOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        std::thread::spawn(move || {
+            // Request 1: Server promises Content-Length 500, but only sends 30 bytes before closing
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let resp = "HTTP/1.1 200 OK\r\nContent-Length: 500\r\nConnection: close\r\n\r\n{\"version\":\"()\",\"patches\":[]}";
+                let _ = stream.write_all(resp.as_bytes());
+            }
+
+            // Request 2: Server sends extra trailing junk after Content-Length bytes
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let body = r#"{"format":1,"frontier":[],"patches":[]}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}trailingjunkignored",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        let url = format!(
+            "http://{}:{port}{}",
+            crate::http::server::SERVER_HOST,
+            crate::http::server::REPOSITORY_ENDPOINT
+        );
+
+        // Test 1: Premature truncation detected as error
+        let err = fetch_repository(&url).unwrap_err();
+        assert!(format!("{err}").contains("truncated HTTP response"));
+
+        // Test 2: Trailing bytes ignored per Content-Length framing
+        let repo = fetch_repository(&url).unwrap();
+        assert_eq!(repo.format, 1);
     }
 }
