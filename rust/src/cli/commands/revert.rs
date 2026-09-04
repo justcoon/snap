@@ -6,7 +6,7 @@ use crate::cli::commands::CliError;
 use crate::config::{resolve_contributor_id, ConfigError};
 use crate::core::diff::{diff_tokens, is_text, tokenize_text};
 use crate::core::patch::{Change, Patch, Repository, TextEditOp};
-use crate::core::replay::{materialize_version, patch_result_version};
+use crate::core::replay::{materialize_version, patch_result_version, FileTree};
 use crate::core::validation::validate_repository;
 use crate::core::version::{Version, MAX_REVISION};
 use crate::fs::materializer::write_repository_atomic;
@@ -44,62 +44,7 @@ pub fn cmd_revert(version_str: &str, mode: PresentationMode) -> Result<(), CliEr
     }
 
     // Compute changes from current_tree to target_tree
-    let mut changes: Vec<Change> = Vec::new();
-    let mut all_paths: BTreeSet<&str> = BTreeSet::new();
-    for p in current_tree.keys() {
-        all_paths.insert(p.as_str());
-    }
-    for p in target_tree.keys() {
-        all_paths.insert(p.as_str());
-    }
-
-    for path in all_paths {
-        let old_content = current_tree.get(path);
-        let new_content = target_tree.get(path);
-
-        match (old_content, new_content) {
-            (Some(_), None) => {
-                changes.push(Change::Delete {
-                    path: path.to_string(),
-                });
-            }
-            (None, Some(new_bytes)) => {
-                if is_text(new_bytes) {
-                    let tokens = tokenize_text(new_bytes)?;
-                    changes.push(Change::Text {
-                        path: path.to_string(),
-                        edit: vec![TextEditOp::Insert(tokens)],
-                    });
-                } else {
-                    let content = BASE64_STANDARD.encode(new_bytes);
-                    changes.push(Change::Put {
-                        path: path.to_string(),
-                        content,
-                    });
-                }
-            }
-            (Some(old_bytes), Some(new_bytes)) => {
-                if old_bytes != new_bytes {
-                    if is_text(old_bytes) && is_text(new_bytes) {
-                        let old_tokens = tokenize_text(old_bytes)?;
-                        let new_tokens = tokenize_text(new_bytes)?;
-                        let edit = diff_tokens(&old_tokens, &new_tokens);
-                        changes.push(Change::Text {
-                            path: path.to_string(),
-                            edit,
-                        });
-                    } else {
-                        let content = BASE64_STANDARD.encode(new_bytes);
-                        changes.push(Change::Put {
-                            path: path.to_string(),
-                            content,
-                        });
-                    }
-                }
-            }
-            (None, None) => {}
-        }
-    }
+    let changes = compute_revert_changes(&current_tree, &target_tree)?;
 
     let current_rev = repo.frontier.get(&author);
     let new_rev = current_rev + 1;
@@ -143,4 +88,101 @@ pub fn cmd_revert(version_str: &str, mode: PresentationMode) -> Result<(), CliEr
 
     print!("{}", format_action_success("Reverted", &new_frontier, mode));
     Ok(())
+}
+
+/// Compute changes to transform `current_tree` into `target_tree` per SPEC §7.7.
+pub fn compute_revert_changes(
+    current_tree: &FileTree,
+    target_tree: &FileTree,
+) -> Result<Vec<Change>, CliError> {
+    let mut changes: Vec<Change> = Vec::new();
+    let mut all_paths: BTreeSet<&str> = BTreeSet::new();
+    for p in current_tree.keys() {
+        all_paths.insert(p.as_str());
+    }
+    for p in target_tree.keys() {
+        all_paths.insert(p.as_str());
+    }
+
+    for path in all_paths {
+        let old_content = current_tree.get(path);
+        let new_content = target_tree.get(path);
+
+        match (old_content, new_content) {
+            (Some(_), None) => {
+                changes.push(Change::Delete {
+                    path: path.to_string(),
+                });
+            }
+            (None, Some(new_bytes)) => {
+                if is_text(new_bytes) {
+                    let tokens = tokenize_text(new_bytes)?;
+                    // SPEC §4.4: An empty script is valid only when creating an empty text file.
+                    let edit = if tokens.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![TextEditOp::Insert(tokens)]
+                    };
+                    changes.push(Change::Text {
+                        path: path.to_string(),
+                        edit,
+                    });
+                } else {
+                    let content = BASE64_STANDARD.encode(new_bytes);
+                    changes.push(Change::Put {
+                        path: path.to_string(),
+                        content,
+                    });
+                }
+            }
+            (Some(old_bytes), Some(new_bytes)) => {
+                if old_bytes != new_bytes {
+                    if is_text(old_bytes) && is_text(new_bytes) {
+                        let old_tokens = tokenize_text(old_bytes)?;
+                        let new_tokens = tokenize_text(new_bytes)?;
+                        let edit = diff_tokens(&old_tokens, &new_tokens);
+                        changes.push(Change::Text {
+                            path: path.to_string(),
+                            edit,
+                        });
+                    } else {
+                        let content = BASE64_STANDARD.encode(new_bytes);
+                        changes.push(Change::Put {
+                            path: path.to_string(),
+                            content,
+                        });
+                    }
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    Ok(changes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_regression_bug_006_revert_empty_text_file() {
+        let current_tree = FileTree::new();
+        let mut target_tree = FileTree::new();
+        target_tree.insert("empty.txt".to_string(), Vec::new());
+
+        let changes = compute_revert_changes(&current_tree, &target_tree).unwrap();
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            Change::Text { path, edit } => {
+                assert_eq!(path, "empty.txt");
+                assert!(
+                    edit.is_empty(),
+                    "Expected empty edit script for creating empty text file, got: {:?}",
+                    edit
+                );
+            }
+            other => panic!("Expected Change::Text, got: {:?}", other),
+        }
+    }
 }

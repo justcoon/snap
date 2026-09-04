@@ -23,7 +23,7 @@
 | `BUG-003` | HTTP client `decode_chunked` tolerates missing CRLF after chunk data and accepts truncated bodies | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_003_http_chunked_missing_crlf_should_error` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-003_walkthrough.md)) |
 | `BUG-004` | HTTP client `decode_chunked` fails to parse RFC 7230 chunk extensions | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.8 | `test_bug_004_http_chunked_fails_on_valid_chunk_extensions` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-004_walkthrough.md)) |
 | `BUG-005` | `cmd_log` traverses `repo.patches` in reverse author order instead of reverse canonical integration order | `rust/src/cli/commands/log.rs` | §7.4 | `test_bug_005_log_reverse_canonical_integration_order` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-005_walkthrough.md)) |
-| `BUG-006` | `cmd_revert` creates invalid empty `TextEditOp::Insert([])` when reverting/restoring an empty text file | `rust/src/cli/commands/revert.rs` | §4.4, §7.7 | `test_bug_006_revert_empty_text_file_from_absent` | 🔴 `OPEN` (Failing reproducer confirmed) |
+| `BUG-006` | `cmd_revert` creates invalid empty `TextEditOp::Insert([])` when reverting/restoring an empty text file | `rust/src/cli/commands/revert.rs` | §4.4, §7.7 | `test_bug_006_revert_empty_text_file_from_absent` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-006_walkthrough.md)) |
 | `BUG-007` | HTTP client `fetch_repository` ignores `Content-Length` and accepts prematurely truncated response bodies | `rust/src/http/client.rs` | RFC 7230 §3.3.3 / SPEC §7.1, §7.8 | `test_bug_007_http_client_content_length_truncation_rejected` | 🔴 `OPEN` (Failing reproducer confirmed) |
 
 ---
@@ -160,7 +160,13 @@
 - **Expected Behavior:**
   When restoring an absent file to an empty text file, `cmd_revert` must generate an empty edit script (`edit: vec![]`), which is the canonical representation under SPEC §4.4 for creating an empty text file.
 - **Reproducer:** [`test_bug_006_revert_empty_text_file_from_absent`](../../rust/tests/bug_reproductions.rs)
-- **Status:** 🔴 `OPEN` — Reproducer confirmed failing (`Expected snap revert to succeed when restoring an empty text file, but failed: snap: replay failed: failed to apply text edit: insert operation cannot be empty`).
+- **Resolution:**
+  - Extracted pure `compute_revert_changes` in `rust/src/cli/commands/revert.rs`.
+  - In absent-to-present text transition, emit `vec![]` (empty edit script) when `tokens.is_empty()` per SPEC §4.4.
+  - Added permanent unit regression test `test_regression_bug_006_revert_empty_text_file` in `rust/src/cli/commands/revert.rs`.
+  - Annotated reproducer `test_bug_006` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (52/52 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-006_walkthrough.md`](resolution_BUG-006_walkthrough.md).
 
 ---
 

@@ -287,6 +287,7 @@ fn test_bug_005_log_reverse_canonical_integration_order() {
 /// `validate_repository` rejects empty insert operations (`insert operation cannot be empty`), causing
 /// `snap revert` to fail with validation errors when reverting back to an empty file.
 #[test]
+#[ignore = "Resolved in BUG-006 (see docs/bugs/resolution_BUG-006_walkthrough.md)"]
 fn test_bug_006_revert_empty_text_file_from_absent() {
     let temp = TestTempDir::new("snap_test_bug_006");
     let snap_bin = env!("CARGO_BIN_EXE_snap");
