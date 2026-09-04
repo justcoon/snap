@@ -150,7 +150,8 @@ fn decode_chunked(input: &[u8]) -> Result<Vec<u8>, CliError> {
         let len_slice = &input[cursor..cursor + crlf];
         let len_str = std::str::from_utf8(len_slice)
             .map_err(|_| CliError::Custom("invalid chunk length encoding".into()))?;
-        let chunk_len = usize::from_str_radix(len_str.trim(), 16)
+        let hex_part = len_str.split(';').next().unwrap_or("");
+        let chunk_len = usize::from_str_radix(hex_part.trim(), 16)
             .map_err(|_| CliError::Custom("invalid chunk length hex".into()))?;
         cursor += crlf + 2;
         if chunk_len == 0 {
@@ -238,5 +239,12 @@ mod tests {
         let truncated = b"4\r\ntest\r\n";
         let err = decode_chunked(truncated).unwrap_err();
         assert!(format!("{err}").contains("missing terminating chunk"));
+    }
+
+    #[test]
+    fn test_regression_bug_004_http_chunked_parses_chunk_extensions() {
+        // Chunk headers with extensions (both data chunk and last chunk)
+        let chunked_with_ext = b"4;ext=dummy;foo=bar\r\ntest\r\n0;final=true\r\n\r\n";
+        assert_eq!(decode_chunked(chunked_with_ext).unwrap(), b"test");
     }
 }
