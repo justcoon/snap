@@ -1,9 +1,11 @@
 pub mod args;
 pub mod commands;
+pub mod diff_format;
 
-pub use args::{parse_args, Command, ParseError};
+pub use args::{parse_args, Command, DiffTarget, ParseError};
 pub use commands::{
-    cmd_commit, cmd_config, cmd_init, cmd_log, cmd_status, find_repository_root, CliError,
+    cmd_commit, cmd_config, cmd_diff, cmd_init, cmd_log, cmd_merge, cmd_revert, cmd_status,
+    find_repository_root, CliError,
 };
 
 /// Dispatch parsed CLI arguments to command handlers.
@@ -34,15 +36,9 @@ pub fn dispatch(args: &[String]) -> Result<(), CliError> {
         Command::Status => cmd_status(),
         Command::Log => cmd_log(),
         Command::Commit { message } => cmd_commit(message),
-        Command::Diff(_) => Err(CliError::DiffUsage),
-        Command::Revert(args) => {
-            if args.len() == 1 {
-                commands::cmd_revert(&args[0])
-            } else {
-                Err(CliError::InvalidCommandOrArguments)
-            }
-        }
-        Command::Merge(_) => Err(CliError::Custom("merge not yet implemented".to_string())),
+        Command::Diff(target) => cmd_diff(target),
+        Command::Revert { version } => cmd_revert(&version),
+        Command::Merge { repo } => cmd_merge(&repo),
         Command::Serve(_) => Err(CliError::Custom("serve not yet implemented".to_string())),
     }
 }

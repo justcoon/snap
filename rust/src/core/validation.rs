@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use crate::core::patch::{Change, Patch, Repository};
 use crate::core::replay::{materialize_version, ReplayError};
-use crate::core::version::ContributorId;
+use crate::core::version::{ContributorId, Version};
 
 /// Errors that can occur during full repository graph and schema validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +67,7 @@ impl fmt::Display for ValidationError {
             ValidationError::DotCollisionDifferentPayload { author, revision } => {
                 write!(
                     f,
-                    "repository corruption: dot collision at ({author}, {revision}) with different patch payloads"
+                    "repository corruption: patch collision: {author} revision {revision}"
                 )
             }
             ValidationError::MissingBasePatch { author, revision } => {
@@ -276,6 +276,40 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
     materialize_version(&repo.patches, &repo.frontier).map_err(ValidationError::ReplayFailed)?;
 
     Ok(())
+}
+
+/// Check whether a version is known (or materializable) in a repository (§4.1).
+///
+/// A version is known when:
+/// 1. Every patch (c, n) selected by n <= V[c] exists in repo.patches.
+/// 2. That selected set contains the complete base of every selected patch.
+pub fn is_version_known(repo: &Repository, version: &Version) -> bool {
+    let mut known_dots = HashSet::new();
+    for p in &repo.patches {
+        known_dots.insert((&p.author, p.revision));
+    }
+
+    // Check that every revision 1..=V[c] exists in patches
+    for (author, target_rev) in version.iter() {
+        for rev in 1..=*target_rev {
+            if !known_dots.contains(&(author, rev)) {
+                return false;
+            }
+        }
+    }
+
+    // Check that selected patches have their base dependencies satisfied within version
+    for p in &repo.patches {
+        if p.revision <= version.get(&p.author) {
+            for (base_author, base_rev) in p.base.iter() {
+                if *base_rev > version.get(base_author) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
 }
 
 #[cfg(test)]

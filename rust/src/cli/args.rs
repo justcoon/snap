@@ -1,3 +1,14 @@
+/// Target specification for the `diff` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiffTarget {
+    WorkingTree,
+    Versions {
+        old: String,
+        new: String,
+        repo: Option<String>,
+    },
+}
+
 /// Strongly typed command parsed from CLI arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -15,9 +26,13 @@ pub enum Command {
     Commit {
         message: String,
     },
-    Diff(Vec<String>),
-    Revert(Vec<String>),
-    Merge(Vec<String>),
+    Diff(DiffTarget),
+    Revert {
+        version: String,
+    },
+    Merge {
+        repo: String,
+    },
     Serve(Vec<String>),
 }
 
@@ -104,38 +119,44 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
             }
         }
         "diff" => {
-            // Validate diff grammar for Phase 5
-            // Full implementation comes in Phase 6, but grammar errors must be checked
             let rest = &args[1..];
-            let is_valid = rest.is_empty()
-                || (rest.len() == 2 && !rest[0].starts_with('-') && !rest[1].starts_with('-'))
-                || (rest.len() == 4
-                    && rest[0] == "--repo"
-                    && !rest[1].starts_with('-')
-                    && !rest[2].starts_with('-')
-                    && !rest[3].starts_with('-'))
-                || (rest.len() == 4
-                    && !rest[0].starts_with('-')
-                    && !rest[1].starts_with('-')
-                    && rest[2] == "--repo"
-                    && !rest[3].starts_with('-'));
-
-            if is_valid {
-                Ok(Command::Diff(rest.to_vec()))
+            if rest.is_empty() {
+                Ok(Command::Diff(DiffTarget::WorkingTree))
+            } else if rest.len() == 2 && !rest[0].starts_with('-') && !rest[1].starts_with('-') {
+                Ok(Command::Diff(DiffTarget::Versions {
+                    old: rest[0].clone(),
+                    new: rest[1].clone(),
+                    repo: None,
+                }))
+            } else if rest.len() == 4
+                && !rest[0].starts_with('-')
+                && !rest[1].starts_with('-')
+                && rest[2] == "--repo"
+                && !rest[3].starts_with('-')
+            {
+                Ok(Command::Diff(DiffTarget::Versions {
+                    old: rest[0].clone(),
+                    new: rest[1].clone(),
+                    repo: Some(rest[3].clone()),
+                }))
             } else {
                 Err(ParseError::DiffUsage)
             }
         }
         "revert" => {
             if args.len() == 2 && !args[1].starts_with('-') {
-                Ok(Command::Revert(args[1..].to_vec()))
+                Ok(Command::Revert {
+                    version: args[1].clone(),
+                })
             } else {
                 Err(ParseError::InvalidCommandOrArguments)
             }
         }
         "merge" => {
             if args.len() == 2 && !args[1].starts_with('-') {
-                Ok(Command::Merge(args[1..].to_vec()))
+                Ok(Command::Merge {
+                    repo: args[1].clone(),
+                })
             } else {
                 Err(ParseError::InvalidCommandOrArguments)
             }

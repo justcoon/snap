@@ -42,6 +42,18 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawContributorConfig {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSnapConfig {
+    contributor: RawContributorConfig,
+}
+
 /// Parse and strictly validate configuration JSON content.
 pub fn parse_config(content: &str) -> Result<SnapConfig, ConfigError> {
     validate_json_strict(content.as_bytes()).map_err(|e| match e {
@@ -52,10 +64,15 @@ pub fn parse_config(content: &str) -> Result<SnapConfig, ConfigError> {
         crate::core::patch::StrictJsonError::InvalidJson(msg) => ConfigError::InvalidJson(msg),
     })?;
 
-    let config: SnapConfig =
+    let raw: RawSnapConfig =
         serde_json::from_str(content).map_err(|e| ConfigError::InvalidJson(e.to_string()))?;
 
-    Ok(config)
+    let contributor_id = ContributorId::parse(&raw.contributor.id)
+        .map_err(|e| ConfigError::InvalidContributorId(e.to_string()))?;
+
+    Ok(SnapConfig {
+        contributor: model::ContributorConfig { id: contributor_id },
+    })
 }
 
 /// Resolve the active contributor ID according to local-over-global precedence.
