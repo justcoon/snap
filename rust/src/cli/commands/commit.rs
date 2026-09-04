@@ -17,7 +17,12 @@ pub const MAX_COMMIT_MESSAGE_BYTES: usize = 4096;
 
 /// Execute `snap commit <message>`.
 pub fn cmd_commit(message: String, mode: PresentationMode) -> Result<(), CliError> {
-    if message.is_empty() || message.len() > MAX_COMMIT_MESSAGE_BYTES {
+    if message.is_empty()
+        || message.len() > MAX_COMMIT_MESSAGE_BYTES
+        || message
+            .chars()
+            .any(|c| c.is_ascii_control() && c != '\t' && c != '\n')
+    {
         return Err(CliError::InvalidCommitMessage);
     }
 

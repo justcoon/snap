@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use crate::core::patch::{Change, Patch, Repository, REPOSITORY_FORMAT_VERSION};
+use crate::core::patch::{Change, Patch, PatchError, Repository, REPOSITORY_FORMAT_VERSION};
 use crate::core::replay::{materialize_version, ReplayError};
 use crate::core::version::{ContributorId, Version};
 
@@ -9,6 +9,7 @@ use crate::core::version::{ContributorId, Version};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
     UnsupportedFormat(u32),
+    InvalidPatch(PatchError),
     UnsortedPatches {
         previous: String,
         current: String,
@@ -52,6 +53,7 @@ impl fmt::Display for ValidationError {
                     "unsupported repository format {fmt}: expected {REPOSITORY_FORMAT_VERSION}"
                 )
             }
+            ValidationError::InvalidPatch(e) => write!(f, "invalid patch: {e}"),
             ValidationError::UnsortedPatches { previous, current } => {
                 write!(
                     f,
@@ -125,6 +127,7 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
     let mut prev_dot: Option<(ContributorId, u64)> = None;
 
     for patch in &repo.patches {
+        patch.validate().map_err(ValidationError::InvalidPatch)?;
         let dot = (patch.author.clone(), patch.revision);
 
         // Check canonical sort order: author ascending, then revision ascending
@@ -392,6 +395,27 @@ mod tests {
             err,
             ValidationError::DotCollisionDifferentPayload { .. }
                 | ValidationError::UnsortedPatches { .. }
+        ));
+    }
+
+    #[test]
+    fn test_regression_bug_001_control_chars_in_message_rejected() {
+        let alice = ContributorId::parse("alice@x").unwrap();
+        let patch = Patch {
+            author: alice.clone(),
+            revision: 1,
+            base: Version::empty(),
+            message: "invalid\x01control\x07char".to_string(),
+            changes: vec![Change::Text {
+                path: "file.txt".to_string(),
+                edit: vec![TextEditOp::Insert(vec!["hello\n".to_string()])],
+            }],
+        };
+        let repo = Repository::new(Version::parse("(alice@x->1)").unwrap(), vec![patch]);
+        let err = validate_repository(&repo).unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::InvalidPatch(PatchError::InvalidMessageControlChar)
         ));
     }
 }
