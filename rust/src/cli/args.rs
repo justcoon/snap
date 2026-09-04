@@ -33,7 +33,9 @@ pub enum Command {
     Merge {
         repo: String,
     },
-    Serve(Vec<String>),
+    Serve {
+        port: Option<u16>,
+    },
 }
 
 /// Errors occurring during CLI argument parsing.
@@ -161,22 +163,28 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                 Err(ParseError::InvalidCommandOrArguments)
             }
         }
-        "--serve" => {
-            if args.len() == 2 {
+        "--serve" => match args.len() {
+            1 => Ok(Command::Serve { port: None }),
+            2 => {
                 let port_str = &args[1];
-                if let Ok(port) = port_str.parse::<u32>() {
-                    if port <= 65535 {
-                        Ok(Command::Serve(vec![port_str.clone()]))
+                if port_str.chars().all(|c| c.is_ascii_digit()) {
+                    if let Ok(port) = port_str.parse::<u32>() {
+                        if port <= 65535 {
+                            Ok(Command::Serve {
+                                port: Some(port as u16),
+                            })
+                        } else {
+                            Err(ParseError::InvalidPort(port_str.clone()))
+                        }
                     } else {
                         Err(ParseError::InvalidPort(port_str.clone()))
                     }
                 } else {
                     Err(ParseError::InvalidPort(port_str.clone()))
                 }
-            } else {
-                Err(ParseError::InvalidCommandOrArguments)
             }
-        }
+            _ => Err(ParseError::InvalidCommandOrArguments),
+        },
         _ => Err(ParseError::InvalidCommandOrArguments),
     }
 }
@@ -268,6 +276,38 @@ mod tests {
         );
         assert_eq!(
             parse_args(&to_args(&["commit", "a", "b"])),
+            Err(ParseError::InvalidCommandOrArguments)
+        );
+    }
+
+    #[test]
+    fn test_parse_serve() {
+        assert_eq!(
+            parse_args(&to_args(&["--serve"])),
+            Ok(Command::Serve { port: None })
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "0"])),
+            Ok(Command::Serve { port: Some(0) })
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "8765"])),
+            Ok(Command::Serve { port: Some(8765) })
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "65535"])),
+            Ok(Command::Serve { port: Some(65535) })
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "65536"])),
+            Err(ParseError::InvalidPort("65536".to_string()))
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "abc"])),
+            Err(ParseError::InvalidPort("abc".to_string()))
+        );
+        assert_eq!(
+            parse_args(&to_args(&["--serve", "8765", "extra"])),
             Err(ParseError::InvalidCommandOrArguments)
         );
     }

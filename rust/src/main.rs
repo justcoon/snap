@@ -12,6 +12,7 @@ pub mod cli;
 pub mod config;
 pub mod core;
 pub mod fs;
+pub mod http;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

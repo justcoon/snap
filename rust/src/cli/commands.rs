@@ -156,8 +156,12 @@ pub fn load_repository(repo_root: &Path) -> Result<Repository, CliError> {
     Ok(repo)
 }
 
-/// Load and strictly validate a remote repository from a path or file.
+/// Load and strictly validate a remote repository from a path, file, or HTTP URL.
 pub fn load_remote_repository(source: &str) -> Result<Repository, CliError> {
+    if source.starts_with("http://") || source.starts_with("https://") {
+        return crate::http::fetch_repository(source);
+    }
+
     let path = Path::new(source);
     let target_file = if path.join(".snap").join("repository.json").is_file() {
         path.join(".snap").join("repository.json")
@@ -175,6 +179,13 @@ pub fn load_remote_repository(source: &str) -> Result<Repository, CliError> {
     let repo = Repository::from_json_slice(&bytes)?;
     validate_repository(&repo)?;
     Ok(repo)
+}
+
+/// Execute `snap --serve [port]`.
+pub fn cmd_serve(port: Option<u16>) -> Result<(), CliError> {
+    let root = find_repository_root()?;
+    let repo = load_repository(&root)?;
+    crate::http::serve_repository(&repo, port)
 }
 
 /// Compare common dots across two repositories and fail if payloads differ (§3.5, §7.6).

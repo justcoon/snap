@@ -410,7 +410,17 @@ impl fmt::Display for RepositoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RepositoryError::StrictJson(e) => write!(f, "{e}"),
-            RepositoryError::Json(e) => write!(f, "{e}"),
+            RepositoryError::Json(e) => {
+                let s = e.to_string();
+                if let Some(start) = s.find("unknown field `") {
+                    let rest = &s[start + "unknown field `".len()..];
+                    if let Some(end) = rest.find('`') {
+                        let field = &rest[..end];
+                        return write!(f, "repository has unknown field: {field}");
+                    }
+                }
+                write!(f, "invalid JSON: {e}")
+            }
             RepositoryError::UnsupportedFormat(fmt) => {
                 write!(f, "unsupported repository format {fmt}: expected 1")
             }
