@@ -141,20 +141,20 @@ Once the hunting phase completes and at least 3 failing tests are established, s
 
 ## Proven Bugs & Corresponding Failing Test Cases
 
-| # | Bug Title | Subsystem / File | SPEC.md Reference | Failing Test Case | Failure Mode / Output |
+| Bug ID | Title | Subsystem / File | SPEC.md Reference | Failing Test Case | Failure Mode / Output |
 |---|---|---|---|---|---|
-| 1 | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_<name>` | `<assertion failure or panic>` |
-| 2 | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_<name>` | `<assertion failure or panic>` |
-| 3 | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_<name>` | `<assertion failure or panic>` |
+| `BUG-001` | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_001_<name>` | `<assertion failure or panic>` |
+| `BUG-002` | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_002_<name>` | `<assertion failure or panic>` |
+| `BUG-003` | <Title> | `<file>:<fn>` | §<X.Y> | `test_bug_003_<name>` | `<assertion failure or panic>` |
 
 ## Detailed Breakdown & Root Cause Analysis
 
-### Bug 1: <Title>
+### Bug BUG-001: <Title>
 - **Location:** `rust/src/<path>`
 - **Violated Contract:** [Quote relevant text from SPEC.md]
 - **Current Behavior:** [Describe what the code currently does]
 - **Expected Behavior:** [Describe what the specification requires]
 - **Reproducer:** [Link to test case in `rust/tests/bug_reproductions.rs`]
 
-[Repeat for each bug]
+[Repeat for each bug: BUG-002, BUG-003, ...]
 ```
