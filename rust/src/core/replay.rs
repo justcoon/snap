@@ -21,6 +21,10 @@ impl FileTree {
         }
     }
 
+    pub fn entries(&self) -> &BTreeMap<String, Vec<u8>> {
+        &self.entries
+    }
+
     pub fn get(&self, path: &str) -> Option<&[u8]> {
         self.entries.get(path).map(|v| v.as_slice())
     }
