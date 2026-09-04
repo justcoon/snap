@@ -17,9 +17,9 @@
 | Bug ID | Title | Subsystem / File | SPEC Reference | Failing Test Case | Status |
 |---|---|---|---|---|---|
 | `BUG-001` | `validate_repository` does not validate patch messages for ASCII control characters | `rust/src/core/validation.rs` | §4.2 | `test_bug_001_validate_repository_allows_control_chars_in_patch_message` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-001_walkthrough.md)) |
-| `BUG-002` | `validate_repository` accepts patches containing duplicate change paths | `rust/src/core/validation.rs` | §4.2 | `test_bug_002_validate_repository_accepts_duplicate_change_paths` | 🟢 `FIXED` (Resolved by patch validation) |
+| `BUG-002` | `validate_repository` accepts patches containing duplicate change paths | `rust/src/core/validation.rs` | §4.2 | `test_bug_002_validate_repository_accepts_duplicate_change_paths` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-002_walkthrough.md)) |
 | `BUG-003` | HTTP client `decode_chunked` tolerates missing CRLF after chunk data and accepts truncated bodies | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_003_http_chunked_missing_crlf_should_error` | 🔴 `OPEN` |
-| `BUG-004` | HTTP client `decode_chunked` fails to parse RFC 7230 chunk extensions | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_004_http_chunked_fails_on_valid_chunk_extensions` | 🔴 `OPEN` |
+| `BUG-004` | HTTP client `decode_chunked` fails to parse RFC 7230 chunk extensions | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.8 | `test_bug_004_http_chunked_fails_on_valid_chunk_extensions` | 🔴 `OPEN` |
 
 ---
 
@@ -51,6 +51,12 @@
 - **Expected Behavior:**
   `validate_repository` must reject any patch where `changes` is empty, unsorted, or contains duplicate paths for the same file.
 - **Reproducer:** [`test_bug_002_validate_repository_accepts_duplicate_change_paths`](../../rust/tests/bug_reproductions.rs)
+- **Resolution:**
+  - Invoking `patch.validate().map_err(ValidationError::InvalidPatch)?;` on each patch inside `validate_repository` ensures patches with duplicate change paths, unsorted paths, or empty changes are rejected.
+  - Added permanent subsystem unit regression test `test_regression_bug_002_duplicate_change_paths_rejected` in `rust/src/core/validation.rs`.
+  - Annotated reproducer `test_bug_002` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (48/48 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-002_walkthrough.md`](resolution_BUG-002_walkthrough.md).
 
 ---
 

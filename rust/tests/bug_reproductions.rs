@@ -46,6 +46,7 @@ fn test_bug_001_validate_repository_allows_control_chars_in_patch_message() {
 /// or if duplicate paths exist. A patch containing duplicate changes for the same path
 /// is accepted by `validate_repository`.
 #[test]
+#[ignore = "Resolved in BUG-002 (see docs/bugs/resolution_BUG-002_walkthrough.md)"]
 fn test_bug_002_validate_repository_accepts_duplicate_change_paths() {
     let author = ContributorId::parse("alice@example.com").unwrap();
     let version = Version::parse("(alice@example.com->1)").unwrap();

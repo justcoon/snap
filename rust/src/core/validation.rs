@@ -418,4 +418,31 @@ mod tests {
             ValidationError::InvalidPatch(PatchError::InvalidMessageControlChar)
         ));
     }
+
+    #[test]
+    fn test_regression_bug_002_duplicate_change_paths_rejected() {
+        let alice = ContributorId::parse("alice@x").unwrap();
+        let patch = Patch {
+            author: alice.clone(),
+            revision: 1,
+            base: Version::empty(),
+            message: "duplicate changes".to_string(),
+            changes: vec![
+                Change::Text {
+                    path: "f.txt".to_string(),
+                    edit: vec![TextEditOp::Insert(vec!["1\n".to_string()])],
+                },
+                Change::Text {
+                    path: "f.txt".to_string(),
+                    edit: vec![TextEditOp::Insert(vec!["2\n".to_string()])],
+                },
+            ],
+        };
+        let repo = Repository::new(Version::parse("(alice@x->1)").unwrap(), vec![patch]);
+        let err = validate_repository(&repo).unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::InvalidPatch(PatchError::DuplicateChangePath(_))
+        ));
+    }
 }
