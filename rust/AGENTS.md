@@ -12,7 +12,7 @@ From within the `rust/` directory:
 
 ```bash
 cargo check                        # fast compilation check
-cargo clippy                       # lint check
+cargo clippy --all-targets         # lint check (including tests)
 cargo fmt                          # format code (or cargo fmt --check)
 cargo build                        # build debug binary (target/debug/snap)
 cargo run -- <arguments>           # run the CLI directly

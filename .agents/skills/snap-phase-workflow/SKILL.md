@@ -40,7 +40,7 @@ Run the verification hierarchy before considering the phase complete:
    ```bash
    cd rust
    cargo check
-   cargo clippy
+   cargo clippy --all-targets
    cargo fmt --check
    ```
    If formatting differences exist, format with `cargo fmt`.
