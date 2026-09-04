@@ -64,8 +64,14 @@ Run the verification hierarchy before considering the phase complete:
    ./verify --lang rust --filter <test-name>
    ```
 
-### 5. Git Commit
-Stage only the relevant implementation and test files for the phase:
+### 5. User Review & Approval
+Before creating any git commits:
+- Present a clear summary of changes, test outputs, and verification results to the user (using `walkthrough.md` when applicable).
+- Explicitly ask for the user's review and approval.
+- Do NOT proceed to stage or commit changes until the user gives explicit confirmation.
+
+### 6. Git Commit
+Once approved by the user, stage only the relevant implementation and test files:
 ```bash
 git status
 git add rust/
