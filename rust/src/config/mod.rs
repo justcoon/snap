@@ -11,6 +11,8 @@ pub use model::SnapConfig;
 
 /// Canonical configuration key for author identity (§5.1).
 pub const CONTRIBUTOR_ID_KEY: &str = "contributor.id";
+/// Standard environment variable pointing to the user home directory (§5.1).
+pub const ENV_HOME: &str = "HOME";
 
 /// Errors resulting from loading, parsing, or writing configuration.
 #[derive(Debug)]
@@ -101,7 +103,7 @@ pub fn resolve_contributor_id(
     }
 
     // 2. Check global configuration
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = std::env::var_os(ENV_HOME) {
         let global_config_path = crate::fs::global_config_path(Path::new(&home));
         if global_config_path.exists() {
             let content = fs::read_to_string(&global_config_path).map_err(|e| ConfigError::Io {

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::cli::commands::common::find_repository_root;
 use crate::cli::commands::CliError;
-use crate::config::{write_config, CONTRIBUTOR_ID_KEY};
+use crate::config::{write_config, CONTRIBUTOR_ID_KEY, ENV_HOME};
 use crate::core::version::ContributorId;
 
 /// Execute `snap config [--global] contributor.id <id>`.
@@ -14,8 +14,8 @@ pub fn cmd_config(is_global: bool, key: &str, value: &str) -> Result<(), CliErro
     let contributor_id = ContributorId::parse(value)?;
 
     if is_global {
-        let home = std::env::var_os("HOME")
-            .ok_or_else(|| CliError::Custom("HOME environment variable not set".to_string()))?;
+        let home = std::env::var_os(ENV_HOME)
+            .ok_or_else(|| CliError::Custom(format!("{ENV_HOME} environment variable not set")))?;
         let global_config = crate::fs::global_config_path(Path::new(&home));
         write_config(&global_config, &contributor_id)?;
     } else {

@@ -7,6 +7,11 @@ pub use formatters::{
 };
 use is_terminal::IsTerminal;
 
+/// Environment variable to explicitly control ANSI terminal styling (§7.11).
+pub const ENV_SNAP_COLOR: &str = "SNAP_COLOR";
+/// Standard environment variable to disable ANSI terminal styling (§7.11).
+pub const ENV_NO_COLOR: &str = "NO_COLOR";
+
 /// Modes negotiated for stdout and stderr independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamModes {
@@ -51,14 +56,14 @@ pub fn negotiate_presentation(
             stdout: PresentationMode::Plain,
             stderr: PresentationMode::Plain,
         }),
-        Some(_) => Err("SNAP_COLOR must be auto, always, or never".to_string()),
+        Some(_) => Err(format!("{ENV_SNAP_COLOR} must be auto, always, or never")),
     }
 }
 
 /// Resolve stream modes from the active process environment and terminal state.
 pub fn current_stream_modes() -> Result<StreamModes, String> {
-    let snap_color = std::env::var("SNAP_COLOR").ok();
-    let no_color = std::env::var_os("NO_COLOR").is_some();
+    let snap_color = std::env::var(ENV_SNAP_COLOR).ok();
+    let no_color = std::env::var_os(ENV_NO_COLOR).is_some();
     let stdout_is_tty = std::io::stdout().is_terminal();
     let stderr_is_tty = std::io::stderr().is_terminal();
 

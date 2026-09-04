@@ -246,3 +246,81 @@ mod tests {
         assert_eq!(merged_comm, expected);
     }
 }
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use crate::core::diff::{apply_edit, diff_tokens};
+    use proptest::prelude::*;
+
+    fn arb_tokens() -> impl Strategy<Value = Vec<String>> {
+        prop::collection::vec(
+            prop_oneof![
+                Just("line1\n".to_string()),
+                Just("line2\n".to_string()),
+                Just("alpha\n".to_string()),
+                Just("beta\n".to_string()),
+                Just("common\n".to_string()),
+                Just("end_token\n".to_string()),
+            ],
+            0..=6,
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn prop_ot_concurrency_invariants(
+            base in arb_tokens(),
+            target_a in arb_tokens(),
+            target_b in arb_tokens()
+        ) {
+            let p = diff_tokens(&base, &target_a);
+            let q = diff_tokens(&base, &target_b);
+
+            // Transform P against Q: P'
+            let p_prime = transform_edit(&p, &q).expect("transform P against Q must succeed");
+
+            // 1. Base Length Parity: P' consumes exactly the output tokens of Q (target_b.len())
+            let mut consumed_by_p_prime = 0u64;
+            for op in &p_prime {
+                match op {
+                    TextEditOp::Retain(n) | TextEditOp::Delete(n) => consumed_by_p_prime += n,
+                    TextEditOp::Insert(_) => {}
+                }
+            }
+            prop_assert_eq!(consumed_by_p_prime, target_b.len() as u64);
+
+            // 2. Applying P' onto target_b must always succeed
+            let result_ab = apply_edit(&target_b, &p_prime).expect("applying P' onto target_b must succeed");
+
+            // 3. Insertion Preservation: All tokens inserted by P must appear in result_ab
+            for op in &p {
+                if let TextEditOp::Insert(tokens) = op {
+                    for t in tokens {
+                        prop_assert!(result_ab.contains(t), "inserted token {:?} must be preserved", t);
+                    }
+                }
+            }
+
+            // 4. Dual Transform Q against P: Q' must consume target_a.len()
+            let q_prime = transform_edit(&q, &p).expect("transform Q against P must succeed");
+            let mut consumed_by_q_prime = 0u64;
+            for op in &q_prime {
+                match op {
+                    TextEditOp::Retain(n) | TextEditOp::Delete(n) => consumed_by_q_prime += n,
+                    TextEditOp::Insert(_) => {}
+                }
+            }
+            prop_assert_eq!(consumed_by_q_prime, target_a.len() as u64);
+
+            let result_ba = apply_edit(&target_a, &q_prime).expect("applying Q' onto target_a must succeed");
+            for op in &q {
+                if let TextEditOp::Insert(tokens) = op {
+                    for t in tokens {
+                        prop_assert!(result_ba.contains(t), "inserted token {:?} must be preserved", t);
+                    }
+                }
+            }
+        }
+    }
+}

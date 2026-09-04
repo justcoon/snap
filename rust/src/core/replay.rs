@@ -543,3 +543,81 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use crate::core::patch::{Change, Patch, TextEditOp};
+    use crate::core::version::{ContributorId, Version};
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_replay_permutation_invariance_and_prefix_freedom(
+            shuffle_seed in any::<u64>()
+        ) {
+            let alice = ContributorId::parse("alice@example.com").unwrap();
+            let bob = ContributorId::parse("bob@example.com").unwrap();
+
+            let p0 = Patch {
+                author: alice.clone(),
+                revision: 1,
+                base: Version::empty(),
+                message: "root".to_string(),
+                changes: vec![Change::Text {
+                    path: "docs/readme.txt".to_string(),
+                    edit: vec![TextEditOp::Insert(vec!["Initial docs\n".to_string()])],
+                }],
+            };
+
+            let v1 = Version::parse("(alice@example.com->1)").unwrap();
+            let p1 = Patch {
+                author: alice.clone(),
+                revision: 2,
+                base: v1.clone(),
+                message: "alice change".to_string(),
+                changes: vec![Change::Text {
+                    path: "docs/readme.txt".to_string(),
+                    edit: vec![
+                        TextEditOp::Retain(1),
+                        TextEditOp::Insert(vec!["Alice section\n".to_string()]),
+                    ],
+                }],
+            };
+
+            let p2 = Patch {
+                author: bob.clone(),
+                revision: 1,
+                base: v1.clone(),
+                message: "bob concurrent".to_string(),
+                changes: vec![Change::Text {
+                    path: "notes.txt".to_string(),
+                    edit: vec![TextEditOp::Insert(vec!["Bob notes\n".to_string()])],
+                }],
+            };
+
+            let target = Version::parse("(alice@example.com->2,bob@example.com->1)").unwrap();
+            let canonical_patches = vec![p0.clone(), p1.clone(), p2.clone()];
+            let (canonical_tree, canonical_warnings) =
+                materialize_version(&canonical_patches, &target).expect("canonical replay must succeed");
+
+            // Permute the input slice order using pseudo-random swap based on seed
+            let mut permuted_patches = canonical_patches.clone();
+            let swap_idx = (shuffle_seed % 3) as usize;
+            permuted_patches.swap(0, swap_idx);
+
+            let (permuted_tree, permuted_warnings) =
+                materialize_version(&permuted_patches, &target).expect("permuted replay must succeed");
+
+            // 1. Permutation invariance: Resulting FileTree is identical
+            prop_assert_eq!(&canonical_tree, &permuted_tree);
+            // 2. Permutation invariance: Warning set is identical
+            prop_assert_eq!(&canonical_warnings, &permuted_warnings);
+
+            // 3. Prefix freedom: No path in tree is a prefix of another path
+            let paths: Vec<&str> = canonical_tree.keys().map(|s| s.as_str()).collect();
+            let prefix_check = crate::fs::paths::check_prefix_free(paths);
+            prop_assert!(prefix_check.is_ok(), "Materialized file tree must be strictly prefix-free");
+        }
+    }
+}
