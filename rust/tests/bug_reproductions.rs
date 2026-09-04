@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use base64::prelude::*;
 use std::io::{Read, Write};
 
@@ -168,5 +170,236 @@ fn test_bug_004_http_chunked_fails_on_valid_chunk_extensions() {
         res.is_ok(),
         "Expected fetch_repository to succeed with valid chunk extensions, but failed with: {:?}",
         res.err()
+    );
+}
+
+struct TestTempDir(std::path::PathBuf);
+
+impl TestTempDir {
+    fn new(name: &str) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let count = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = std::env::temp_dir().join(format!("{name}_{}_{count}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        TestTempDir(path)
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for TestTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// SPEC §7.4:
+/// "`snap log` prints patches in reverse canonical integration order, one tab-separated line each"
+///
+/// BUG-005: `cmd_log` traverses `repo.patches.iter().rev()`. Because `repo.patches` is stored
+/// sorted by author then revision (§4.1), traversing in reverse author order fails to follow
+/// reverse canonical integration order (§6.1). When Alice's patch depends on Bob's patch,
+/// Bob's patch is printed before Alice's patch, inverting causal history in the log!
+#[test]
+fn test_bug_005_log_reverse_canonical_integration_order() {
+    let temp = TestTempDir::new("snap_test_bug_005");
+    let dot_snap = temp.path().join(".snap");
+    std::fs::create_dir_all(&dot_snap).unwrap();
+
+    let author_alice = ContributorId::parse("alice@example.com").unwrap();
+    let author_bob = ContributorId::parse("bob@example.com").unwrap();
+
+    let patch_bob = Patch {
+        author: author_bob,
+        revision: 1,
+        base: Version::empty(),
+        message: "root commit by bob".to_string(),
+        changes: vec![Change::Put {
+            path: "file.txt".to_string(),
+            content: BASE64_STANDARD.encode(b"bob content"),
+        }],
+    };
+
+    let patch_alice = Patch {
+        author: author_alice,
+        revision: 1,
+        base: Version::parse("(bob@example.com->1)").unwrap(),
+        message: "child commit by alice".to_string(),
+        changes: vec![Change::Put {
+            path: "file.txt".to_string(),
+            content: BASE64_STANDARD.encode(b"alice content"),
+        }],
+    };
+
+    let version = Version::parse("(alice@example.com->1,bob@example.com->1)").unwrap();
+    // In repo.patches, patches are sorted by author: Alice (index 0), Bob (index 1)
+    let repo = Repository::new(version, vec![patch_alice, patch_bob]);
+    validate_repository(&repo).expect("Repository must be valid");
+
+    std::fs::write(
+        dot_snap.join("repository.json"),
+        repo.to_json_pretty().unwrap(),
+    )
+    .unwrap();
+
+    let snap_bin = env!("CARGO_BIN_EXE_snap");
+    let output = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .arg("log")
+        .output()
+        .expect("snap log must execute");
+
+    assert!(
+        output.status.success(),
+        "snap log failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    assert!(
+        lines.len() >= 2,
+        "Expected at least 2 log lines, got stdout:\n{stdout}"
+    );
+
+    // Canonical integration order starts from empty base, integrating Bob first, then Alice second.
+    // Reverse canonical integration order MUST list Alice first, then Bob second.
+    assert!(
+        lines[0].starts_with("(alice@example.com->1"),
+        "SPEC §7.4 requires reverse canonical integration order: child commit Alice must appear first, but line 0 was: {}",
+        lines[0]
+    );
+}
+
+/// SPEC §4.4, §7.7:
+/// "`snap revert <version>` reverts the tree to a previously recorded version without rewriting history.
+/// Creates a new patch whose changes transform the current tree into the target tree...
+/// An empty script is valid only when creating an empty text file."
+///
+/// BUG-006: In `cmd_revert`, when restoring an empty text file from absent (`(None, Some(new_bytes))` where
+/// `new_bytes` is `b""`), it constructs `Change::Text { path, edit: vec![TextEditOp::Insert(vec![])] }`.
+/// `validate_repository` rejects empty insert operations (`insert operation cannot be empty`), causing
+/// `snap revert` to fail with validation errors when reverting back to an empty file.
+#[test]
+fn test_bug_006_revert_empty_text_file_from_absent() {
+    let temp = TestTempDir::new("snap_test_bug_006");
+    let snap_bin = env!("CARGO_BIN_EXE_snap");
+
+    // Initialize repository
+    let out = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .arg("init")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "snap init failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Configure contributor
+    let out = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .args(["config", "contributor.id", "tester@example.com"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "snap config failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Create an empty text file "empty.txt"
+    std::fs::write(temp.path().join("empty.txt"), b"").unwrap();
+
+    // Commit empty file -> creates (tester@example.com->1)
+    let out = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .args(["commit", "create empty file"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "Failed to commit empty file: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Delete empty file
+    std::fs::remove_file(temp.path().join("empty.txt")).unwrap();
+
+    // Commit deletion -> creates (tester@example.com->2)
+    let out = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .args(["commit", "delete empty file"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "Failed to commit delete: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Now revert back to (tester@example.com->1) to restore the empty file
+    let out = std::process::Command::new(snap_bin)
+        .current_dir(temp.path())
+        .args(["revert", "(tester@example.com->1)"])
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "Expected snap revert to succeed when restoring an empty text file, but failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// RFC 7230 §3.3.3 / SPEC §7.1, §7.8:
+/// "If a message is received with a Content-Length header field and a message-body is received
+/// of length less than the number of octets indicated by the Content-Length, the message has
+/// been truncated and MUST be treated as an error."
+///
+/// BUG-007: HTTP client `fetch_repository` completely ignores `Content-Length`. If the remote
+/// server promises N bytes via `Content-Length` but closes the connection prematurely after sending
+/// fewer bytes (e.g. truncated snapshot JSON), `fetch_repository` silently accepts the truncated body.
+#[test]
+fn test_bug_007_http_client_content_length_truncation_rejected() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let valid_repo = Repository::new(Version::empty(), vec![]);
+    let valid_json = valid_repo.to_json_pretty().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+
+            // Server promises 500 bytes via Content-Length, but only sends the ~39 bytes of valid_json
+            // before closing the connection.
+            let promised_len = valid_json.len() + 300;
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {promised_len}\r\nConnection: close\r\n\r\n"
+            )
+            .into_bytes();
+            response.extend_from_slice(valid_json.as_bytes());
+
+            let _ = stream.write_all(&response);
+            let _ = stream.flush();
+            // Connection closes here when stream is dropped
+        }
+    });
+
+    let url = format!("http://127.0.0.1:{port}/repository.json");
+    let res = fetch_repository(&url);
+    server_handle.join().unwrap();
+
+    assert!(
+        res.is_err(),
+        "Expected fetch_repository to reject truncated response body where fewer bytes than Content-Length were received, but got Ok"
     );
 }
