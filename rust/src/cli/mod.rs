@@ -4,8 +4,8 @@ pub mod diff_format;
 
 pub use args::{parse_args, Command, DiffTarget, ParseError};
 pub use commands::{
-    cmd_commit, cmd_config, cmd_diff, cmd_init, cmd_log, cmd_merge, cmd_revert, cmd_serve,
-    cmd_status, cmd_version, find_repository_root, CliError,
+    cmd_commit, cmd_config, cmd_diff, cmd_help, cmd_init, cmd_log, cmd_merge, cmd_revert,
+    cmd_serve, cmd_status, cmd_version, find_repository_root, CliError,
 };
 
 /// Dispatch parsed CLI arguments to command handlers.
@@ -24,6 +24,7 @@ pub fn dispatch(args: &[String], modes: crate::presentation::StreamModes) -> Res
 
     match command {
         Command::Version => cmd_version(modes.stdout),
+        Command::Help => cmd_help(modes.stdout),
         Command::Init { path } => cmd_init(path, modes.stdout),
         Command::Config {
             is_global,

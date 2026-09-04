@@ -15,6 +15,7 @@ pub enum DiffTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
+    Help,
     Init {
         path: Option<String>,
     },
@@ -62,6 +63,13 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                 Err(ParseError::InvalidCommandOrArguments)
             }
         }
+        "help" => {
+            if args.len() == 1 {
+                Ok(Command::Help)
+            } else {
+                Err(ParseError::InvalidCommandOrArguments)
+            }
+        }
         "init" => match args.len() {
             1 => Ok(Command::Init { path: None }),
             2 => {
@@ -84,6 +92,15 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                 Ok(Command::Config {
                     is_global: true,
                     key: args[2].clone(),
+                    value: args[3].clone(),
+                })
+            } else if args.len() == 4 && args[2] == "--global" {
+                if args[1] != CONTRIBUTOR_ID_KEY {
+                    return Err(ParseError::InvalidCommandOrArguments);
+                }
+                Ok(Command::Config {
+                    is_global: true,
+                    key: args[1].clone(),
                     value: args[3].clone(),
                 })
             } else if args.len() == 3 && !args[1].starts_with('-') {
@@ -209,6 +226,15 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_help() {
+        assert_eq!(parse_args(&to_args(&["help"])), Ok(Command::Help));
+        assert_eq!(
+            parse_args(&to_args(&["help", "extra"])),
+            Err(ParseError::InvalidCommandOrArguments)
+        );
+    }
+
+    #[test]
     fn test_parse_init() {
         assert_eq!(
             parse_args(&to_args(&["init"])),
@@ -261,6 +287,19 @@ mod tests {
                 "a@x"
             ])),
             Err(ParseError::InvalidCommandOrArguments)
+        );
+    }
+
+    #[test]
+    fn test_regression_bug_008_config_flag_after_key_supported() {
+        // BUG-008: config command should support --global flag after the key
+        assert_eq!(
+            parse_args(&to_args(&["config", CONTRIBUTOR_ID_KEY, "--global", "a@x"])),
+            Ok(Command::Config {
+                is_global: true,
+                key: CONTRIBUTOR_ID_KEY.to_string(),
+                value: "a@x".to_string(),
+            })
         );
     }
 

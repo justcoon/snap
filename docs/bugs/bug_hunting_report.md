@@ -2,15 +2,16 @@
 
 ## Executive Summary
 - **Report Date:** 2026-09-04
-- **Total Bugs Identified & Proven:** 7 (All 7 fixed; Minimum required per hunt: 3)
+- **Total Bugs Identified & Proven:** 8 (All 8 fixed; Minimum required per hunt: 3)
 - **Primary Subsystems Affected:**
   - Repository Graph & Invariant Validation (`rust/src/core/validation.rs`)
   - CLI Commit Validation & State Mutation (`rust/src/cli/commands/commit.rs`)
   - HTTP Snapshot Client & Chunked Decoder (`rust/src/http/client.rs`)
   - CLI Log Command & History Replay Order (`rust/src/cli/commands/log.rs`)
   - CLI Revert Command & Empty File Reversion (`rust/src/cli/commands/revert.rs`)
+  - CLI Argument Parsing (`rust/src/cli/args.rs`)
 - **Reproducer Suite Location:** [`rust/tests/bug_reproductions.rs`](../../rust/tests/bug_reproductions.rs)
-- **Active Burndown Status:** 0 open bugs remaining; all 7 discovered bugs verified fixed and cleanly ignored in the reproducer burndown backlog.
+- **Active Burndown Status:** 0 open bugs remaining; all 8 discovered bugs verified fixed and cleanly ignored in the reproducer burndown backlog.
 
 ---
 
@@ -25,6 +26,7 @@
 | `BUG-005` | `cmd_log` traverses `repo.patches` in reverse author order instead of reverse canonical integration order | `rust/src/cli/commands/log.rs` | §7.4 | `test_bug_005_log_reverse_canonical_integration_order` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-005_walkthrough.md)) |
 | `BUG-006` | `cmd_revert` creates invalid empty `TextEditOp::Insert([])` when reverting/restoring an empty text file | `rust/src/cli/commands/revert.rs` | §4.4, §7.7 | `test_bug_006_revert_empty_text_file_from_absent` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-006_walkthrough.md)) |
 | `BUG-007` | HTTP client `fetch_repository` ignores `Content-Length` and accepts prematurely truncated response bodies | `rust/src/http/client.rs` | RFC 7230 §3.3.3 / SPEC §7.1, §7.8 | `test_bug_007_http_client_content_length_truncation_rejected` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-007_walkthrough.md)) |
+| `BUG-008` | `snap config` does not support `--global` flag after the key | `rust/src/cli/args.rs` | §7.2 | `test_bug_008_config_flag_after_key_supported` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-008_walkthrough.md)) |
 
 ---
 
@@ -189,5 +191,27 @@
   - Annotated reproducer `test_bug_007` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
   - Full test suite passed (53/53 unit/property tests, 28/28 acceptance suites).
   - Detailed Walkthrough: [`docs/bugs/resolution_BUG-007_walkthrough.md`](resolution_BUG-007_walkthrough.md).
+
+---
+
+### Bug BUG-008: `snap config` Does Not Support `--global` Flag After the Key
+- **Location:** [`rust/src/cli/args.rs:87-115`](../../rust/src/cli/args.rs#L87-L115)
+- **Violated Contract:**
+  > SPEC §7.2:
+  > "`snap config [--global] contributor.id <id>` ... The `--global` flag may precede or follow the key:
+  > `snap config contributor.id --global <id>` is identical to the form shown above."
+- **Current Behavior:**
+  In `rust/src/cli/args.rs`, the `parse_args` function only handles the case where `--global` precedes the key (`snap config --global contributor.id <value>`). The parser does not handle the case where `--global` follows the key (`snap config contributor.id --global <value>`), causing it to return `ParseError::InvalidCommandOrArguments`.
+- **Expected Behavior:**
+  Both `snap config --global contributor.id <value>` and `snap config contributor.id --global <value>` should parse identically with `is_global: true`.
+- **Reproducer:** [`test_bug_008_config_flag_after_key_supported`](../../rust/tests/bug_reproductions.rs)
+- **Resolution:**
+  - Added a new condition in the `config` match arm to handle `args.len() == 4 && args[2] == "--global"`.
+  - This condition checks for the pattern `snap config <key> --global <value>` and correctly parses it with `is_global: true`.
+  - Fixed the reproducer test to properly call `parse_args(&args[1..])` instead of `parse_args(&args)` (the parser expects CLI tokens without argv[0]).
+  - Added permanent unit regression test `test_regression_bug_008_config_flag_after_key_supported` in `rust/src/cli/args.rs`.
+  - Annotated reproducer `test_bug_008` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (55/55 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-008_walkthrough.md`](resolution_BUG-008_walkthrough.md).
 
 

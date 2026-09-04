@@ -13,6 +13,7 @@ pub mod commit;
 pub mod common;
 pub mod config;
 pub mod diff;
+pub mod help;
 pub mod init;
 pub mod log;
 pub mod merge;
@@ -27,6 +28,7 @@ pub use common::{
 };
 pub use config::cmd_config;
 pub use diff::cmd_diff;
+pub use help::cmd_help;
 pub use init::cmd_init;
 pub use log::cmd_log;
 pub use merge::cmd_merge;
