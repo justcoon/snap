@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use crate::core::patch::{Change, Patch, Repository};
+use crate::core::patch::{Change, Patch, Repository, REPOSITORY_FORMAT_VERSION};
 use crate::core::replay::{materialize_version, ReplayError};
 use crate::core::version::{ContributorId, Version};
 
@@ -47,7 +47,10 @@ impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ValidationError::UnsupportedFormat(fmt) => {
-                write!(f, "unsupported repository format {fmt}: expected 1")
+                write!(
+                    f,
+                    "unsupported repository format {fmt}: expected {REPOSITORY_FORMAT_VERSION}"
+                )
             }
             ValidationError::UnsortedPatches { previous, current } => {
                 write!(
@@ -111,7 +114,7 @@ impl std::error::Error for ValidationError {}
 
 /// Perform complete validation of a repository graph according to SPEC §4.1, §4.5.
 pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
-    if repo.format != 1 {
+    if repo.format != REPOSITORY_FORMAT_VERSION {
         return Err(ValidationError::UnsupportedFormat(repo.format));
     }
 

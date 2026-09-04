@@ -1,5 +1,35 @@
 use std::collections::HashSet;
 use std::fmt;
+use std::path::{Path, PathBuf};
+
+/// Snap repository metadata directory name.
+pub const SNAP_DIR: &str = ".snap";
+/// Repository history file name.
+pub const REPOSITORY_FILE: &str = "repository.json";
+/// Local configuration file name within `.snap/`.
+pub const CONFIG_FILE: &str = "config.json";
+/// Global user configuration file name in `$HOME/`.
+pub const GLOBAL_CONFIG_FILE: &str = ".snapconfig.json";
+
+/// Return path to repository metadata directory: `<root>/.snap`.
+pub fn snap_dir(root: &Path) -> PathBuf {
+    root.join(SNAP_DIR)
+}
+
+/// Return path to repository history file: `<root>/.snap/repository.json`.
+pub fn repo_file_path(root: &Path) -> PathBuf {
+    snap_dir(root).join(REPOSITORY_FILE)
+}
+
+/// Return path to local configuration file: `<root>/.snap/config.json`.
+pub fn local_config_path(root: &Path) -> PathBuf {
+    snap_dir(root).join(CONFIG_FILE)
+}
+
+/// Return path to global configuration file: `<home>/.snapconfig.json`.
+pub fn global_config_path(home: &Path) -> PathBuf {
+    home.join(GLOBAL_CONFIG_FILE)
+}
 
 /// Errors resulting from validating a tracked relative path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +52,7 @@ impl fmt::Display for PathError {
             PathError::EmptySegment => write!(f, "path cannot contain empty segments"),
             PathError::DotSegment => write!(f, "path cannot contain '.' segments"),
             PathError::DotDotSegment => write!(f, "path cannot contain '..' segments"),
-            PathError::SnapPrefix => write!(f, "path first segment cannot equal '.snap'"),
+            PathError::SnapPrefix => write!(f, "path first segment cannot equal '{SNAP_DIR}'"),
         }
     }
 }
@@ -52,7 +82,7 @@ pub fn validate_tracked_path(path: &str) -> Result<(), PathError> {
         if *seg == ".." {
             return Err(PathError::DotDotSegment);
         }
-        if idx == 0 && *seg == ".snap" {
+        if idx == 0 && *seg == SNAP_DIR {
             return Err(PathError::SnapPrefix);
         }
     }

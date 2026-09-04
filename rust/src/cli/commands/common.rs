@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 use crate::cli::commands::CliError;
 use crate::core::patch::Repository;
 use crate::core::validation::validate_repository;
+use crate::fs::{repo_file_path, REPOSITORY_FILE};
 
 /// Locate the nearest repository root directory containing `.snap/repository.json`.
 pub fn find_repository_root() -> Result<PathBuf, CliError> {
     let mut curr = std::env::current_dir()?;
     loop {
-        if curr.join(".snap").join("repository.json").is_file() {
+        if repo_file_path(&curr).is_file() {
             return Ok(curr);
         }
         if let Some(parent) = curr.parent() {
@@ -23,7 +24,7 @@ pub fn find_repository_root() -> Result<PathBuf, CliError> {
 
 /// Load and strictly validate the repository at `repo_root`.
 pub fn load_repository(repo_root: &Path) -> Result<Repository, CliError> {
-    let repo_file = repo_root.join(".snap").join("repository.json");
+    let repo_file = repo_file_path(repo_root);
     let bytes = fs::read(&repo_file)?;
     let repo = Repository::from_json_slice(&bytes)?;
     validate_repository(&repo)?;
@@ -37,10 +38,10 @@ pub fn load_remote_repository(source: &str) -> Result<Repository, CliError> {
     }
 
     let path = Path::new(source);
-    let target_file = if path.join(".snap").join("repository.json").is_file() {
-        path.join(".snap").join("repository.json")
-    } else if path.join("repository.json").is_file() {
-        path.join("repository.json")
+    let target_file = if repo_file_path(path).is_file() {
+        repo_file_path(path)
+    } else if path.join(REPOSITORY_FILE).is_file() {
+        path.join(REPOSITORY_FILE)
     } else if path.is_file() {
         path.to_path_buf()
     } else {

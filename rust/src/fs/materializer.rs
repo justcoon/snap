@@ -89,7 +89,7 @@ pub fn write_repository_atomic(snap_dir: &Path, repo: &Repository) -> Result<(),
     let mut bytes = json_string.into_bytes();
     bytes.push(b'\n');
 
-    let repo_file = snap_dir.join("repository.json");
+    let repo_file = snap_dir.join(crate::fs::paths::REPOSITORY_FILE);
     atomic_replace_file(&repo_file, &bytes)
 }
 

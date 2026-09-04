@@ -3,8 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
-/// Maximum safe integer for revisions, matching JavaScript's Number.MAX_SAFE_INTEGER (2^53 - 1).
+/// Maximum safe integer for revisions, matching JavaScript's Number.MAX_SAFE_INTEGER (2^53 - 1) (§3.1).
 pub const MAX_REVISION: u64 = 9007199254740991;
+
+/// Maximum length of a contributor identifier in ASCII bytes (§3.1).
+pub const MAX_CONTRIBUTOR_ID_BYTES: usize = 254;
 
 /// Errors that can occur when parsing or validating a contributor ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +30,10 @@ impl fmt::Display for ContributorIdError {
         match self {
             ContributorIdError::Empty => write!(f, "contributor id cannot be empty"),
             ContributorIdError::TooLong(len) => {
-                write!(f, "contributor id exceeds 254 bytes (got {len})")
+                write!(
+                    f,
+                    "contributor id exceeds {MAX_CONTRIBUTOR_ID_BYTES} bytes (got {len})"
+                )
             }
             ContributorIdError::NotAscii => {
                 write!(f, "contributor id must contain only ASCII characters")
@@ -75,7 +81,7 @@ impl ContributorId {
         if s.is_empty() {
             return Err(ContributorIdError::Empty);
         }
-        if s.len() > 254 {
+        if s.len() > MAX_CONTRIBUTOR_ID_BYTES {
             return Err(ContributorIdError::TooLong(s.len()));
         }
         if !s.is_ascii() {

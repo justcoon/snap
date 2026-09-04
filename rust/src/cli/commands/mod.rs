@@ -21,7 +21,7 @@ pub mod serve;
 pub mod status;
 pub mod version;
 
-pub use commit::cmd_commit;
+pub use commit::{cmd_commit, MAX_COMMIT_MESSAGE_BYTES};
 pub use common::{
     check_dot_collisions, find_repository_root, load_remote_repository, load_repository,
 };

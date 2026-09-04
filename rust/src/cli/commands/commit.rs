@@ -12,9 +12,12 @@ use crate::fs::materializer::write_repository_atomic;
 use crate::fs::scanner::{diff_working_tree, scan_working_tree, FileStatus};
 use crate::presentation::{format_action_success, PresentationMode};
 
+/// Maximum commit message length in UTF-8 bytes enforced by `snap commit` (§4.2).
+pub const MAX_COMMIT_MESSAGE_BYTES: usize = 4096;
+
 /// Execute `snap commit <message>`.
 pub fn cmd_commit(message: String, mode: PresentationMode) -> Result<(), CliError> {
-    if message.is_empty() || message.len() > 4096 {
+    if message.is_empty() || message.len() > MAX_COMMIT_MESSAGE_BYTES {
         return Err(CliError::InvalidCommitMessage);
     }
 
@@ -103,7 +106,7 @@ pub fn cmd_commit(message: String, mode: PresentationMode) -> Result<(), CliErro
     let new_repo = Repository::new(new_frontier.clone(), new_patches);
     validate_repository(&new_repo)?;
 
-    let snap_dir = root.join(".snap");
+    let snap_dir = crate::fs::snap_dir(&root);
     write_repository_atomic(&snap_dir, &new_repo)?;
 
     print!(

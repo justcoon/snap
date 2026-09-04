@@ -1,3 +1,5 @@
+use crate::config::CONTRIBUTOR_ID_KEY;
+
 /// Target specification for the `diff` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffTarget {
@@ -76,7 +78,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
         },
         "config" => {
             if args.len() == 4 && args[1] == "--global" {
-                if args[2] != "contributor.id" {
+                if args[2] != CONTRIBUTOR_ID_KEY {
                     return Err(ParseError::InvalidCommandOrArguments);
                 }
                 Ok(Command::Config {
@@ -85,7 +87,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                     value: args[3].clone(),
                 })
             } else if args.len() == 3 && !args[1].starts_with('-') {
-                if args[1] != "contributor.id" {
+                if args[1] != CONTRIBUTOR_ID_KEY {
                     return Err(ParseError::InvalidCommandOrArguments);
                 }
                 Ok(Command::Config {
@@ -231,23 +233,23 @@ mod tests {
     #[test]
     fn test_parse_config() {
         assert_eq!(
-            parse_args(&to_args(&["config", "contributor.id", "a@x"])),
+            parse_args(&to_args(&["config", CONTRIBUTOR_ID_KEY, "a@x"])),
             Ok(Command::Config {
                 is_global: false,
-                key: "contributor.id".to_string(),
+                key: CONTRIBUTOR_ID_KEY.to_string(),
                 value: "a@x".to_string(),
             })
         );
         assert_eq!(
-            parse_args(&to_args(&["config", "--global", "contributor.id", "a@x"])),
+            parse_args(&to_args(&["config", "--global", CONTRIBUTOR_ID_KEY, "a@x"])),
             Ok(Command::Config {
                 is_global: true,
-                key: "contributor.id".to_string(),
+                key: CONTRIBUTOR_ID_KEY.to_string(),
                 value: "a@x".to_string(),
             })
         );
         assert_eq!(
-            parse_args(&to_args(&["config", "contributor.id", "a@x", "--global"])),
+            parse_args(&to_args(&["config", CONTRIBUTOR_ID_KEY, "a@x", "--global"])),
             Err(ParseError::InvalidCommandOrArguments)
         );
         assert_eq!(
@@ -255,7 +257,7 @@ mod tests {
                 "config",
                 "--global",
                 "--global",
-                "contributor.id",
+                CONTRIBUTOR_ID_KEY,
                 "a@x"
             ])),
             Err(ParseError::InvalidCommandOrArguments)

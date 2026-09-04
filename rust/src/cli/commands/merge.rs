@@ -88,7 +88,7 @@ pub fn cmd_merge(repo_source: &str, modes: StreamModes) -> Result<(), CliError> 
         current_tree.entries(),
         merged_tree.entries(),
     )?;
-    let snap_dir = root.join(".snap");
+    let snap_dir = crate::fs::snap_dir(&root);
     write_repository_atomic(&snap_dir, &merged_repo)?;
 
     print!(

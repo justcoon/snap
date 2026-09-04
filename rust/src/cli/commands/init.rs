@@ -2,6 +2,7 @@ use crate::cli::commands::CliError;
 use crate::core::patch::Repository;
 use crate::core::version::Version;
 use crate::fs::materializer::write_repository_atomic;
+use crate::fs::{repo_file_path, snap_dir};
 use crate::presentation::{format_action_success, PresentationMode};
 use std::fs;
 
@@ -15,7 +16,7 @@ pub fn cmd_init(target_path: Option<String>, mode: PresentationMode) -> Result<(
     };
 
     // Check if target directory already has a .snap directory
-    if target_dir.join(".snap").exists() {
+    if snap_dir(&target_dir).exists() {
         return Err(CliError::RepositoryAlreadyExists);
     }
 
@@ -29,7 +30,7 @@ pub fn cmd_init(target_path: Option<String>, mode: PresentationMode) -> Result<(
     };
 
     loop {
-        if check_dir.join(".snap").join("repository.json").is_file() {
+        if repo_file_path(&check_dir).is_file() {
             return Err(CliError::CannotInitializeInsideRepository);
         }
         if let Some(parent) = check_dir.parent() {
@@ -41,7 +42,7 @@ pub fn cmd_init(target_path: Option<String>, mode: PresentationMode) -> Result<(
 
     // Create target and .snap directory
     fs::create_dir_all(&target_dir)?;
-    let snap_dir = target_dir.join(".snap");
+    let snap_dir = snap_dir(&target_dir);
     fs::create_dir_all(&snap_dir)?;
 
     // Create empty repository

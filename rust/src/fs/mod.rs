@@ -5,7 +5,11 @@ pub mod scanner;
 pub use materializer::{
     atomic_replace_file, materialize_tree, write_repository_atomic, MaterializeError,
 };
-pub use paths::{check_prefix_free, validate_tracked_path, PathError, PrefixFreeError};
+pub use paths::{
+    check_prefix_free, global_config_path, local_config_path, repo_file_path, snap_dir,
+    validate_tracked_path, PathError, PrefixFreeError, CONFIG_FILE, GLOBAL_CONFIG_FILE,
+    REPOSITORY_FILE, SNAP_DIR,
+};
 pub use scanner::{
     diff_working_tree, scan_working_tree, FileStatus, ScanError, WorkingChange, WorkingTreeDiff,
 };

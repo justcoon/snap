@@ -6,64 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::core::version::{ContributorId, Version, MAX_REVISION};
 
-/// Errors that can occur when validating a tracked path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathError {
-    Empty,
-    ContainsControlChar,
-    ContainsBackslash,
-    EmptySegment,
-    DotSegment,
-    DotDotSegment,
-    SnapPrefix,
-}
-
-impl fmt::Display for PathError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathError::Empty => write!(f, "path cannot be empty"),
-            PathError::ContainsControlChar => write!(f, "path cannot contain control characters"),
-            PathError::ContainsBackslash => write!(f, "path cannot contain backslashes"),
-            PathError::EmptySegment => write!(f, "path cannot contain empty segments"),
-            PathError::DotSegment => write!(f, "path cannot contain '.' segments"),
-            PathError::DotDotSegment => write!(f, "path cannot contain '..' segments"),
-            PathError::SnapPrefix => write!(f, "path first segment cannot equal '.snap'"),
-        }
-    }
-}
-
-impl std::error::Error for PathError {}
-
-/// Validate a tracked relative path according to SPEC §2.
-pub fn validate_tracked_path(path: &str) -> Result<(), PathError> {
-    if path.is_empty() {
-        return Err(PathError::Empty);
-    }
-    if path.chars().any(|c| c.is_ascii_control()) {
-        return Err(PathError::ContainsControlChar);
-    }
-    if path.contains('\\') {
-        return Err(PathError::ContainsBackslash);
-    }
-
-    let segments: Vec<&str> = path.split('/').collect();
-    for (idx, seg) in segments.iter().enumerate() {
-        if seg.is_empty() {
-            return Err(PathError::EmptySegment);
-        }
-        if *seg == "." {
-            return Err(PathError::DotSegment);
-        }
-        if *seg == ".." {
-            return Err(PathError::DotDotSegment);
-        }
-        if idx == 0 && *seg == ".snap" {
-            return Err(PathError::SnapPrefix);
-        }
-    }
-
-    Ok(())
-}
+pub use crate::fs::paths::{validate_tracked_path, PathError};
 
 /// A single operation in a text edit script.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,6 +238,9 @@ impl Patch {
     }
 }
 
+/// Canonical repository format version (§3.2).
+pub const REPOSITORY_FORMAT_VERSION: u32 = 1;
+
 /// Complete repository value stored in `.snap/repository.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -307,7 +253,7 @@ pub struct Repository {
 impl Repository {
     pub fn new(frontier: Version, patches: Vec<Patch>) -> Self {
         Repository {
-            format: 1,
+            format: REPOSITORY_FORMAT_VERSION,
             frontier,
             patches,
         }
@@ -330,7 +276,7 @@ impl Repository {
         validate_json_strict(bytes)?;
 
         let repo: Repository = serde_json::from_slice(bytes).map_err(RepositoryError::Json)?;
-        if repo.format != 1 {
+        if repo.format != REPOSITORY_FORMAT_VERSION {
             return Err(RepositoryError::UnsupportedFormat(repo.format));
         }
 

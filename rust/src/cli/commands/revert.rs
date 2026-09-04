@@ -138,7 +138,7 @@ pub fn cmd_revert(version_str: &str, mode: PresentationMode) -> Result<(), CliEr
     )?;
 
     // Atomically write updated repository.json
-    let snap_dir = root.join(".snap");
+    let snap_dir = crate::fs::snap_dir(&root);
     write_repository_atomic(&snap_dir, &new_repo)?;
 
     print!("{}", format_action_success("Reverted", &new_frontier, mode));

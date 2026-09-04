@@ -7,8 +7,34 @@ use crate::cli::CliError;
 use crate::core::patch::Repository;
 use crate::core::validation::validate_repository;
 
-/// Synchronously fetch and strictly validate a remote repository over HTTP.
+/// Default timeout for HTTP client socket connect, read, and write operations.
+pub const DEFAULT_CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Configuration options for the HTTP snapshot client (§7.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpClientConfig {
+    /// Connection connect, read, and write timeout (default: 10s).
+    pub timeout: Duration,
+}
+
+impl Default for HttpClientConfig {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_CLIENT_TIMEOUT,
+        }
+    }
+}
+
+/// Synchronously fetch and strictly validate a remote repository over HTTP using default configuration.
 pub fn fetch_repository(url_str: &str) -> Result<Repository, CliError> {
+    fetch_repository_with_config(url_str, &HttpClientConfig::default())
+}
+
+/// Synchronously fetch and strictly validate a remote repository over HTTP with custom configuration.
+pub fn fetch_repository_with_config(
+    url_str: &str,
+    config: &HttpClientConfig,
+) -> Result<Repository, CliError> {
     let parsed_url = Url::parse(url_str)
         .map_err(|e| CliError::Custom(format!("invalid HTTP repository URL: {e}")))?;
 
@@ -45,7 +71,7 @@ pub fn fetch_repository(url_str: &str) -> Result<Repository, CliError> {
 
     let mut stream = None;
     for addr in addrs {
-        if let Ok(s) = TcpStream::connect_timeout(&addr, Duration::from_secs(10)) {
+        if let Ok(s) = TcpStream::connect_timeout(&addr, config.timeout) {
             stream = Some(s);
             break;
         }
@@ -54,10 +80,10 @@ pub fn fetch_repository(url_str: &str) -> Result<Repository, CliError> {
         stream.ok_or_else(|| CliError::Custom(format!("failed to connect to {host}:{port}")))?;
 
     stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
+        .set_read_timeout(Some(config.timeout))
         .map_err(CliError::Io)?;
     stream
-        .set_write_timeout(Some(Duration::from_secs(10)))
+        .set_write_timeout(Some(config.timeout))
         .map_err(CliError::Io)?;
 
     // Send HTTP GET request
@@ -149,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_fetch_repository_success_and_error() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let listener = TcpListener::bind((crate::http::server::SERVER_HOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
 
         std::thread::spawn(move || {
@@ -176,7 +202,11 @@ mod tests {
         });
 
         // Test 1: Fetch valid
-        let url = format!("http://127.0.0.1:{port}/repository.json");
+        let url = format!(
+            "http://{}:{port}{}",
+            crate::http::server::SERVER_HOST,
+            crate::http::server::REPOSITORY_ENDPOINT
+        );
         let repo = fetch_repository(&url).unwrap();
         assert_eq!(repo.format, 1);
 

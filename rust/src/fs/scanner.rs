@@ -120,7 +120,7 @@ fn scan_dir_recursive(
         let name_str = file_name.to_string_lossy();
 
         // Skip root .snap directory
-        if rel_prefix.is_empty() && name_str == ".snap" {
+        if rel_prefix.is_empty() && name_str == crate::fs::paths::SNAP_DIR {
             continue;
         }
 

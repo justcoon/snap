@@ -9,6 +9,9 @@ use crate::core::version::ContributorId;
 use crate::fs::materializer::atomic_replace_file;
 pub use model::SnapConfig;
 
+/// Canonical configuration key for author identity (§5.1).
+pub const CONTRIBUTOR_ID_KEY: &str = "contributor.id";
+
 /// Errors resulting from loading, parsing, or writing configuration.
 #[derive(Debug)]
 pub enum ConfigError {
@@ -33,7 +36,7 @@ impl fmt::Display for ConfigError {
             ConfigError::MissingContributorId => {
                 write!(
                     f,
-                    "contributor.id is required; configure it locally or globally"
+                    "{CONTRIBUTOR_ID_KEY} is required; configure it locally or globally"
                 )
             }
         }
@@ -86,7 +89,7 @@ pub fn resolve_contributor_id(
 ) -> Result<Option<ContributorId>, ConfigError> {
     // 1. Check local configuration
     if let Some(root) = repo_root {
-        let local_config_path = root.join(".snap").join("config.json");
+        let local_config_path = crate::fs::local_config_path(root);
         if local_config_path.exists() {
             let content = fs::read_to_string(&local_config_path).map_err(|e| ConfigError::Io {
                 path: local_config_path.display().to_string(),
@@ -99,7 +102,7 @@ pub fn resolve_contributor_id(
 
     // 2. Check global configuration
     if let Some(home) = std::env::var_os("HOME") {
-        let global_config_path = Path::new(&home).join(".snapconfig.json");
+        let global_config_path = crate::fs::global_config_path(Path::new(&home));
         if global_config_path.exists() {
             let content = fs::read_to_string(&global_config_path).map_err(|e| ConfigError::Io {
                 path: global_config_path.display().to_string(),
