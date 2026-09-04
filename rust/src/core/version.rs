@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
@@ -348,6 +348,11 @@ impl Version {
         Ok(Version { entries: map })
     }
 
+    /// Construct a version directly from a pre-validated map.
+    pub fn from_map_unchecked(entries: BTreeMap<ContributorId, u64>) -> Self {
+        Version { entries }
+    }
+
     /// Parse a version from its canonical string syntax `()` or `(id1->rev1,id2->rev2)`.
     pub fn parse(s: &str) -> Result<Self, VersionError> {
         if !s.starts_with('(') || !s.ends_with(')') {
@@ -407,37 +412,12 @@ impl Version {
         let mut has_less = false;
         let mut has_greater = false;
 
-        // Iterate over union of contributors
-        let mut self_iter = self.entries.iter().peekable();
-        let mut other_iter = other.entries.iter().peekable();
+        let all_keys: BTreeSet<&ContributorId> =
+            self.entries.keys().chain(other.entries.keys()).collect();
 
-        while self_iter.peek().is_some() || other_iter.peek().is_some() {
-            let (v_self, v_other) = match (self_iter.peek(), other_iter.peek()) {
-                (Some((k1, _)), Some((k2, _))) => match k1.cmp(k2) {
-                    Ordering::Equal => {
-                        let (_, r1) = self_iter.next().unwrap();
-                        let (_, r2) = other_iter.next().unwrap();
-                        (*r1, *r2)
-                    }
-                    Ordering::Less => {
-                        let (_, r1) = self_iter.next().unwrap();
-                        (*r1, 0)
-                    }
-                    Ordering::Greater => {
-                        let (_, r2) = other_iter.next().unwrap();
-                        (0, *r2)
-                    }
-                },
-                (Some(_), None) => {
-                    let (_, r1) = self_iter.next().unwrap();
-                    (*r1, 0)
-                }
-                (None, Some(_)) => {
-                    let (_, r2) = other_iter.next().unwrap();
-                    (0, *r2)
-                }
-                (None, None) => unreachable!(),
-            };
+        for key in all_keys {
+            let v_self = self.get(key);
+            let v_other = other.get(key);
 
             if v_self < v_other {
                 has_less = true;
@@ -479,40 +459,13 @@ impl Version {
     /// Element-wise join (maximum) of two vector clocks.
     pub fn join(&self, other: &Self) -> Self {
         let mut entries = BTreeMap::new();
+        let all_keys: BTreeSet<&ContributorId> =
+            self.entries.keys().chain(other.entries.keys()).collect();
 
-        let mut self_iter = self.entries.iter().peekable();
-        let mut other_iter = other.entries.iter().peekable();
-
-        while self_iter.peek().is_some() || other_iter.peek().is_some() {
-            let (key, max_rev) = match (self_iter.peek(), other_iter.peek()) {
-                (Some((k1, _)), Some((k2, _))) => match k1.cmp(k2) {
-                    Ordering::Equal => {
-                        let (k, r1) = self_iter.next().unwrap();
-                        let (_, r2) = other_iter.next().unwrap();
-                        (k.clone(), std::cmp::max(*r1, *r2))
-                    }
-                    Ordering::Less => {
-                        let (k, r1) = self_iter.next().unwrap();
-                        (k.clone(), *r1)
-                    }
-                    Ordering::Greater => {
-                        let (k, r2) = other_iter.next().unwrap();
-                        (k.clone(), *r2)
-                    }
-                },
-                (Some(_), None) => {
-                    let (k, r1) = self_iter.next().unwrap();
-                    (k.clone(), *r1)
-                }
-                (None, Some(_)) => {
-                    let (k, r2) = other_iter.next().unwrap();
-                    (k.clone(), *r2)
-                }
-                (None, None) => unreachable!(),
-            };
-
+        for key in all_keys {
+            let max_rev = std::cmp::max(self.get(key), other.get(key));
             if max_rev > 0 {
-                entries.insert(key, max_rev);
+                entries.insert(key.clone(), max_rev);
             }
         }
 
@@ -524,36 +477,12 @@ impl Version {
     /// Evaluates the sorted union of contributor IDs and lexicographically compares
     /// the counter at each ID. The first unequal counter decides.
     pub fn cmp_snap_order(&self, other: &Self) -> Ordering {
-        let mut self_iter = self.entries.iter().peekable();
-        let mut other_iter = other.entries.iter().peekable();
+        let all_keys: BTreeSet<&ContributorId> =
+            self.entries.keys().chain(other.entries.keys()).collect();
 
-        while self_iter.peek().is_some() || other_iter.peek().is_some() {
-            let (v_self, v_other) = match (self_iter.peek(), other_iter.peek()) {
-                (Some((k1, _)), Some((k2, _))) => match k1.cmp(k2) {
-                    Ordering::Equal => {
-                        let (_, r1) = self_iter.next().unwrap();
-                        let (_, r2) = other_iter.next().unwrap();
-                        (*r1, *r2)
-                    }
-                    Ordering::Less => {
-                        let (_, r1) = self_iter.next().unwrap();
-                        (*r1, 0)
-                    }
-                    Ordering::Greater => {
-                        let (_, r2) = other_iter.next().unwrap();
-                        (0, *r2)
-                    }
-                },
-                (Some(_), None) => {
-                    let (_, r1) = self_iter.next().unwrap();
-                    (*r1, 0)
-                }
-                (None, Some(_)) => {
-                    let (_, r2) = other_iter.next().unwrap();
-                    (0, *r2)
-                }
-                (None, None) => unreachable!(),
-            };
+        for key in all_keys {
+            let v_self = self.get(key);
+            let v_other = other.get(key);
 
             match v_self.cmp(&v_other) {
                 Ordering::Equal => continue,

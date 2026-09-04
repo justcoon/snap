@@ -153,7 +153,9 @@ impl<'de> Deserialize<'de> for TextEditOp {
             return Ok(TextEditOp::Insert(tokens));
         }
 
-        unreachable!()
+        Err(serde::de::Error::custom(
+            "text edit operation must specify exactly one of 'retain', 'delete', or 'insert'",
+        ))
     }
 }
 
@@ -560,11 +562,16 @@ pub fn validate_json_strict(bytes: &[u8]) -> Result<(), StrictJsonError> {
                 if let Some(true) = context_stack.last() {
                     if !expecting_value {
                         // It's a key! Check duplicates
-                        let current_keys = object_keys_stack.last_mut().unwrap();
-                        if current_keys.contains(&string_content) {
-                            return Err(StrictJsonError::DuplicateKey(string_content));
+                        if let Some(current_keys) = object_keys_stack.last_mut() {
+                            if current_keys.contains(&string_content) {
+                                return Err(StrictJsonError::DuplicateKey(string_content));
+                            }
+                            current_keys.insert(string_content);
+                        } else {
+                            return Err(StrictJsonError::InvalidJson(
+                                "missing object key tracker".to_string(),
+                            ));
                         }
-                        current_keys.insert(string_content);
                     }
                 }
             }
