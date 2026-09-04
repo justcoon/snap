@@ -249,6 +249,30 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
                                     .to_string(),
                             });
                         }
+                    } else {
+                        // Text creation: path absent in base tree
+                        // SPEC §4.4: An empty script is valid only when creating an empty file.
+                        // For creation, edit must only contain Insert operations (or be empty for empty file).
+                        // Retain and Delete operations are invalid when there's no base content.
+                        for op in edit {
+                            match op {
+                                crate::core::patch::TextEditOp::Insert(_) => {
+                                    // Valid for creation
+                                }
+                                crate::core::patch::TextEditOp::Retain(_) => {
+                                    return Err(ValidationError::ChangeInvalidAgainstBaseTree {
+                                        path: path.to_string(),
+                                        reason: "invalid text creation: retain operation cannot consume tokens from absent file".to_string(),
+                                    });
+                                }
+                                crate::core::patch::TextEditOp::Delete(_) => {
+                                    return Err(ValidationError::ChangeInvalidAgainstBaseTree {
+                                        path: path.to_string(),
+                                        reason: "invalid text creation: delete operation cannot remove tokens from absent file".to_string(),
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
                 Change::Put { content, .. } => {
@@ -281,7 +305,73 @@ pub fn validate_repository(repo: &Repository) -> Result<(), ValidationError> {
         }
     }
 
-    // 5. Replay of declared frontier
+    // 5. Validate that each patch's authored result tree is prefix-free (§4.5)
+    for patch in &repo.patches {
+        let (base_tree, _) = materialize_version(&repo.patches, &patch.base)
+            .map_err(ValidationError::ReplayFailed)?;
+
+        // Apply this patch's changes to get the authored result tree
+        let mut authored_tree = base_tree.clone();
+        for change in &patch.changes {
+            match change {
+                Change::Text { path, edit } => {
+                    let base_bytes = authored_tree.get(path);
+                    if let Some(base_val) = base_bytes {
+                        let old_tokens =
+                            crate::core::diff::tokenize_text(base_val).map_err(|e| {
+                                ValidationError::ChangeInvalidAgainstBaseTree {
+                                    path: path.to_string(),
+                                    reason: e.to_string(),
+                                }
+                            })?;
+                        let new_tokens =
+                            crate::core::diff::apply_edit(&old_tokens, edit).map_err(|e| {
+                                ValidationError::ChangeInvalidAgainstBaseTree {
+                                    path: path.to_string(),
+                                    reason: e.to_string(),
+                                }
+                            })?;
+                        let new_bytes = new_tokens.join("").into_bytes();
+                        authored_tree.insert(path.clone(), new_bytes);
+                    } else {
+                        // Text creation
+                        let new_tokens = crate::core::diff::apply_edit(&[], edit).map_err(|e| {
+                            ValidationError::ChangeInvalidAgainstBaseTree {
+                                path: path.to_string(),
+                                reason: e.to_string(),
+                            }
+                        })?;
+                        let new_bytes = new_tokens.join("").into_bytes();
+                        authored_tree.insert(path.clone(), new_bytes);
+                    }
+                }
+                Change::Put { path, content } => {
+                    use base64::prelude::*;
+                    let new_bytes = BASE64_STANDARD.decode(content).map_err(|e| {
+                        ValidationError::ChangeInvalidAgainstBaseTree {
+                            path: path.to_string(),
+                            reason: format!("invalid base64 content: {e}"),
+                        }
+                    })?;
+                    authored_tree.insert(path.clone(), new_bytes);
+                }
+                Change::Delete { path } => {
+                    authored_tree.remove(path);
+                }
+            }
+        }
+
+        // Check that the authored tree is prefix-free
+        let authored_paths: Vec<&str> = authored_tree.keys().map(|k| k.as_str()).collect();
+        crate::fs::paths::check_prefix_free(authored_paths.iter().copied()).map_err(|e| {
+            ValidationError::ChangeInvalidAgainstBaseTree {
+                path: patch.author.to_string(),
+                reason: format!("authored result tree is not prefix-free: {e}"),
+            }
+        })?;
+    }
+
+    // 6. Replay of declared frontier
     materialize_version(&repo.patches, &repo.frontier).map_err(ValidationError::ReplayFailed)?;
 
     Ok(())
@@ -443,6 +533,71 @@ mod tests {
         assert!(matches!(
             err,
             ValidationError::InvalidPatch(PatchError::DuplicateChangePath(_))
+        ));
+    }
+
+    #[test]
+    fn test_regression_bug_009_authored_result_prefix_free() {
+        use base64::prelude::*;
+        let alice = ContributorId::parse("alice@x").unwrap();
+        let v1 = Version::parse("(alice@x->1)").unwrap();
+        let v2 = Version::parse("(alice@x->2)").unwrap();
+
+        let patch1 = Patch {
+            author: alice.clone(),
+            revision: 1,
+            base: Version::empty(),
+            message: "create nested file".to_string(),
+            changes: vec![Change::Put {
+                path: "dir/file.txt".to_string(),
+                content: BASE64_STANDARD.encode(b"hello"),
+            }],
+        };
+
+        // Patch 2 creates regular file "dir" while "dir/file.txt" exists in base tree.
+        // Resulting authored tree contains both "dir" and "dir/file.txt" (not prefix-free).
+        let patch2 = Patch {
+            author: alice.clone(),
+            revision: 2,
+            base: v1.clone(),
+            message: "shadow directory with file".to_string(),
+            changes: vec![Change::Put {
+                path: "dir".to_string(),
+                content: BASE64_STANDARD.encode(b"shadow"),
+            }],
+        };
+
+        let repo = Repository::new(v2, vec![patch1, patch2]);
+        let err = validate_repository(&repo).unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::ChangeInvalidAgainstBaseTree { .. }
+        ));
+    }
+
+    #[test]
+    fn test_regression_bug_010_text_creation_from_absent_validation() {
+        let alice = ContributorId::parse("alice@x").unwrap();
+        let v1 = Version::parse("(alice@x->1)").unwrap();
+
+        // Patch creates "file.txt" (absent in base), but specifies TextEditOp::Retain(5)
+        // which cannot consume tokens from an absent (empty) file.
+        let patch = Patch {
+            author: alice.clone(),
+            revision: 1,
+            base: Version::empty(),
+            message: "invalid text creation with retain".to_string(),
+            changes: vec![Change::Text {
+                path: "file.txt".to_string(),
+                edit: vec![TextEditOp::Retain(5)],
+            }],
+        };
+
+        let repo = Repository::new(v1, vec![patch]);
+        let err = validate_repository(&repo).unwrap_err();
+        assert!(matches!(
+            err,
+            ValidationError::ChangeInvalidAgainstBaseTree { .. }
         ));
     }
 }

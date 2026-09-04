@@ -2,7 +2,7 @@
 
 ## Executive Summary
 - **Report Date:** 2026-09-04
-- **Total Bugs Identified & Proven:** 8 (All 8 fixed; Minimum required per hunt: 3)
+- **Total Bugs Identified & Proven:** 10 (All 10 fixed; Minimum required per hunt: 3)
 - **Primary Subsystems Affected:**
   - Repository Graph & Invariant Validation (`rust/src/core/validation.rs`)
   - CLI Commit Validation & State Mutation (`rust/src/cli/commands/commit.rs`)
@@ -11,7 +11,7 @@
   - CLI Revert Command & Empty File Reversion (`rust/src/cli/commands/revert.rs`)
   - CLI Argument Parsing (`rust/src/cli/args.rs`)
 - **Reproducer Suite Location:** [`rust/tests/bug_reproductions.rs`](../../rust/tests/bug_reproductions.rs)
-- **Active Burndown Status:** 0 open bugs remaining; all 8 discovered bugs verified fixed and cleanly ignored in the reproducer burndown backlog.
+- **Active Burndown Status:** 0 open bugs remaining; all 10 discovered bugs verified fixed and cleanly ignored in the reproducer burndown backlog.
 
 ---
 
@@ -27,6 +27,8 @@
 | `BUG-006` | `cmd_revert` creates invalid empty `TextEditOp::Insert([])` when reverting/restoring an empty text file | `rust/src/cli/commands/revert.rs` | §4.4, §7.7 | `test_bug_006_revert_empty_text_file_from_absent` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-006_walkthrough.md)) |
 | `BUG-007` | HTTP client `fetch_repository` ignores `Content-Length` and accepts prematurely truncated response bodies | `rust/src/http/client.rs` | RFC 7230 §3.3.3 / SPEC §7.1, §7.8 | `test_bug_007_http_client_content_length_truncation_rejected` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-007_walkthrough.md)) |
 | `BUG-008` | `snap config` does not support `--global` flag after the key | `rust/src/cli/args.rs` | §7.2 | `test_bug_008_config_flag_after_key_supported` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-008_walkthrough.md)) |
+| `BUG-009` | `validate_repository` does not check that authored result trees are prefix-free | `rust/src/core/validation.rs` | §2, §4.5 | `test_bug_009_validate_repository_authored_result_prefix_free` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-009_walkthrough.md)) |
+| `BUG-010` | `validate_repository` skips text creation validation when base is absent | `rust/src/core/validation.rs` | §4.3, §4.4 | `test_bug_010_validate_repository_text_creation_from_absent_validation` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-010_walkthrough.md)) |
 
 ---
 
@@ -213,5 +215,51 @@
   - Annotated reproducer `test_bug_008` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
   - Full test suite passed (55/55 unit/property tests, 28/28 acceptance suites).
   - Detailed Walkthrough: [`docs/bugs/resolution_BUG-008_walkthrough.md`](resolution_BUG-008_walkthrough.md).
+
+---
+
+### Bug BUG-009: `validate_repository` Does Not Check That Authored Result Trees Are Prefix-Free
+- **Location:** [`rust/src/core/validation.rs:308-370`](../../rust/src/core/validation.rs#L308-L370)
+- **Violated Contract:**
+  > SPEC §2:
+  > "Every tracked tree is prefix-free by path segment: if `a` is a file, no `a/...` path is present. This is validated for every patch's authored result and enforced during concurrent replay by §6.4."
+  > SPEC §4.5:
+  > "5. The authored result tree of every patch (the tree resulting from applying its changes to its base tree) is prefix-free by path segment."
+- **Current Behavior:**
+  In `rust/src/core/validation.rs`, `validate_repository` checks `check_prefix_free` only on `patch.changes` in isolation during step 4. The validation never verifies that the authored result tree (applying `patch.changes` to the materialized `base_tree`) is prefix-free. Consequently, a patch creating a file "dir" when "dir/file.txt" exists in the base tree is accepted, resulting in both "dir" (file) and "dir/file.txt" (nested file) coexisting in the authored tree, violating the prefix-free invariant.
+- **Expected Behavior:**
+  `validate_repository` must verify that each patch's authored result tree (after applying changes to base tree) is prefix-free by path segment. A patch creating "dir" when "dir/file.txt" exists in the base tree must be rejected.
+- **Reproducer:** [`test_bug_009_validate_repository_authored_result_prefix_free`](../../rust/tests/bug_reproductions.rs)
+- **Resolution:**
+  - Added a new validation step (step 5) in `validate_repository` that materializes each patch's authored result tree by applying its changes to its base tree.
+  - For each patch, the code now materializes the base tree, applies all patch changes to construct the authored result tree, and calls `check_prefix_free` on the authored tree's paths.
+  - Returns `ValidationError::ChangeInvalidAgainstBaseTree` if the authored tree is not prefix-free.
+  - Added permanent unit regression test `test_regression_bug_009_authored_result_prefix_free` in `rust/src/core/validation.rs`.
+  - Annotated reproducer `test_bug_009` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (57/57 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-009_walkthrough.md`](resolution_BUG-009_walkthrough.md).
+
+---
+
+### Bug BUG-010: `validate_repository` Skips Text Creation Validation When Base Is Absent
+- **Location:** [`rust/src/core/validation.rs:252-276`](../../rust/src/core/validation.rs#L252-L276)
+- **Violated Contract:**
+  > SPEC §4.3:
+  > "A text or put creation requires the path to be absent in the patch's exact base tree... A change that does not alter path existence or bytes is invalid, except that an empty text edit may create an empty file."
+  > SPEC §4.4:
+  > "The script MUST consume the complete old token sequence; there is no implicit trailing retain... An empty script is valid only when creating an empty text file."
+- **Current Behavior:**
+  In `rust/src/core/validation.rs`, step 4 of `validate_repository` validates `Change::Text` operations against the base tree. When `base_bytes` is `None` (path absent in base tree, i.e., text creation), the validation logic only checked the case where the path exists (`if let Some(base_val) = base_bytes`). The `else` branch for text creation was completely missing, so invalid text creation operations like `Retain(5)` or `Delete(3)` passed validation even though they cannot consume tokens from an absent (empty) file.
+- **Expected Behavior:**
+  When creating a new text file (path absent in base tree), the edit script must only contain `Insert` operations (or be empty for creating an empty file). `Retain` and `Delete` operations are invalid for text creation since there is no base content to consume or remove.
+- **Reproducer:** [`test_bug_010_validate_repository_text_creation_from_absent_validation`](../../rust/tests/bug_reproductions.rs)
+- **Resolution:**
+  - Added an `else` branch in the `Change::Text` validation to handle text creation (when `base_bytes` is `None`).
+  - The new validation iterates through all edit operations and rejects `Retain` operations (cannot consume tokens from absent file) and `Delete` operations (cannot remove tokens from absent file).
+  - Only `Insert` operations (or empty scripts) are valid for text creation per SPEC §4.4.
+  - Added permanent unit regression test `test_regression_bug_010_text_creation_from_absent_validation` in `rust/src/core/validation.rs`.
+  - Annotated reproducer `test_bug_010` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (57/57 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-010_walkthrough.md`](resolution_BUG-010_walkthrough.md).
 
 

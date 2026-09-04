@@ -406,3 +406,130 @@ fn test_bug_007_http_client_content_length_truncation_rejected() {
         "Expected fetch_repository to reject truncated response body where fewer bytes than Content-Length were received, but got Ok"
     );
 }
+
+/// SPEC §7.2:
+/// "snap config [--global] contributor.id <id>
+/// Sets the contributor identity...
+/// The --global flag may precede or follow the key:
+/// snap config contributor.id --global <id>
+/// is identical to the form shown above."
+///
+/// BUG-008: `parse_args` only accepts `--global` before the key in `snap config`.
+/// When `--global` follows `contributor.id` (e.g. `snap config contributor.id --global <id>`),
+/// `parse_args` fails with `ParseError::InvalidCommandOrArguments`.
+#[test]
+#[ignore = "Resolved in BUG-008 (see docs/bugs/resolution_BUG-008_walkthrough.md)"]
+fn test_bug_008_config_flag_after_key_supported() {
+    use snap::cli::args::{parse_args, Command};
+
+    let args = vec![
+        "snap".to_string(),
+        "config".to_string(),
+        "contributor.id".to_string(),
+        "--global".to_string(),
+        "alice@example.com".to_string(),
+    ];
+    let cmd = parse_args(&args[1..]);
+    assert!(
+        cmd.is_ok(),
+        "Expected 'snap config contributor.id --global alice@example.com' to succeed, but got: {:?}",
+        cmd
+    );
+    assert_eq!(
+        cmd.unwrap(),
+        Command::Config {
+            is_global: true,
+            key: "contributor.id".to_string(),
+            value: "alice@example.com".to_string(),
+        }
+    );
+}
+
+/// SPEC §2:
+/// "Every tracked tree is prefix-free by path segment: if `a` is a file, no `a/...` path is
+/// present. This is validated for every patch's authored result and enforced during concurrent
+/// replay by §6.4."
+/// SPEC §4.5:
+/// "5. The authored result tree of every patch (the tree resulting from applying its changes to its
+/// base tree) is prefix-free by path segment."
+///
+/// BUG-009: `validate_repository` checks `check_prefix_free` only on `patch.changes` in isolation,
+/// but never verifies that the authored result tree (applying `patch.changes` to `base_tree`)
+/// is prefix-free. A patch creating a file "dir" when "dir/file.txt" exists in base tree is accepted.
+#[test]
+#[ignore = "Resolved in BUG-009 (see docs/bugs/resolution_BUG-009_walkthrough.md)"]
+fn test_bug_009_validate_repository_authored_result_prefix_free() {
+    let author = ContributorId::parse("alice@example.com").unwrap();
+    let v1 = Version::parse("(alice@example.com->1)").unwrap();
+    let v2 = Version::parse("(alice@example.com->2)").unwrap();
+
+    let patch1 = Patch {
+        author: author.clone(),
+        revision: 1,
+        base: Version::empty(),
+        message: "create nested file".to_string(),
+        changes: vec![Change::Put {
+            path: "dir/file.txt".to_string(),
+            content: BASE64_STANDARD.encode(b"hello"),
+        }],
+    };
+
+    // Patch 2 creates regular file "dir" while "dir/file.txt" exists in base tree.
+    // Resulting authored tree contains both "dir" and "dir/file.txt" (not prefix-free).
+    let patch2 = Patch {
+        author: author.clone(),
+        revision: 2,
+        base: v1.clone(),
+        message: "shadow directory with file".to_string(),
+        changes: vec![Change::Put {
+            path: "dir".to_string(),
+            content: BASE64_STANDARD.encode(b"shadow"),
+        }],
+    };
+
+    let repo = Repository::new(v2, vec![patch1, patch2]);
+    let res = validate_repository(&repo);
+    assert!(
+        res.is_err(),
+        "Expected validate_repository to reject patch whose authored result tree is not prefix-free, but got Ok(())"
+    );
+}
+
+/// SPEC §4.3:
+/// "A text or put creation requires the path to be absent in the patch's exact base tree...
+/// A change that does not alter path existence or bytes is invalid, except that an empty text
+/// edit may create an empty file."
+/// SPEC §4.4:
+/// "The script MUST consume the complete old token sequence; there is no implicit trailing retain...
+/// An empty script is valid only when creating an empty text file."
+///
+/// BUG-010: In `validate_repository` step 4, when `base_bytes` is `None` for a `Change::Text`,
+/// validation is skipped. An invalid text creation with `Retain(5)` or `Delete(3)` passes step 4.
+#[test]
+#[ignore = "Resolved in BUG-010 (see docs/bugs/resolution_BUG-010_walkthrough.md)"]
+fn test_bug_010_validate_repository_text_creation_from_absent_validation() {
+    use snap::core::patch::TextEditOp;
+
+    let author = ContributorId::parse("alice@example.com").unwrap();
+    let v1 = Version::parse("(alice@example.com->1)").unwrap();
+
+    // Patch creates "file.txt" (absent in base), but specifies TextEditOp::Retain(5)
+    // which cannot consume tokens from an absent (empty) file.
+    let patch = Patch {
+        author: author.clone(),
+        revision: 1,
+        base: Version::empty(),
+        message: "invalid text creation with retain".to_string(),
+        changes: vec![Change::Text {
+            path: "file.txt".to_string(),
+            edit: vec![TextEditOp::Retain(5)],
+        }],
+    };
+
+    let repo = Repository::new(v1, vec![patch]);
+    let res = validate_repository(&repo);
+    assert!(
+        res.is_err(),
+        "Expected validate_repository to reject text creation with Retain operation from absent file, but got Ok(())"
+    );
+}
