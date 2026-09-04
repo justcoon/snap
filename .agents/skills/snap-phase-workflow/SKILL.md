@@ -13,10 +13,13 @@ This skill guides the end-to-end execution of implementation phases defined in [
 
 Follow these systematic steps whenever executing a phase:
 
-### 1. Requirements Alignment & Research
+### 1. Requirements Alignment & Implementation Plan
 - **Inspect the Phase Objectives:** Locate the target phase in `plan.md` (§7: *Phased Implementation Roadmap*) and review its objectives and verification gates.
 - **Consult Test Scenarios:** Find the matching domain in `test-scenarios.md` (§2: *Detailed Test Scenarios by Domain*) to identify required unit scenarios, boundary conditions, and property tests.
 - **Reference the Canonical Specification:** Review the relevant sections of `SPEC.md` to guarantee all normative requirements (MUST/MUST NOT) are satisfied.
+- **Create & Commit Implementation Plan:**
+  - Create the detailed implementation plan in `docs/implementation/phase-<N>_implementation_plan.md` (and also update the session `implementation_plan.md` artifact for interactive review).
+  - Obtain user approval on the plan before starting code modifications.
 
 ### 2. Architecture & Module Partitioning
 Maintain strict separation of concerns in `rust/src/`:
@@ -64,16 +67,23 @@ Run the verification hierarchy before considering the phase complete:
    ./verify --lang rust --filter <test-name>
    ```
 
-### 5. User Review & Approval
-Before creating any git commits:
-- Present a clear summary of changes, test outputs, and verification results to the user (using `walkthrough.md` when applicable).
-- Explicitly ask for the user's review and approval.
-- Do NOT proceed to stage or commit changes until the user gives explicit confirmation.
+### 5. Walkthrough & Discrepancy Analysis
+Before asking for commit approval:
+- Create `docs/implementation/phase-<N>_implementation_walkthrough.md` (and update session `walkthrough.md`).
+- **Mandatory Discrepancy Check Section:** Every walkthrough MUST contain a section:
+  ```markdown
+  ## Plan vs. Implementation Discrepancy Check
+  - **Planned Scope:** [Summary of proposed changes from phase plan]
+  - **Implemented Scope:** [Summary of actual changes made]
+  - **Deviations / Adjustments:** [Explicitly list any deviations, edge-case discoveries, or additions with technical rationale, or state "None: Implementation strictly adhered to the approved plan."]
+  ```
+- Present a clear summary of changes, test outputs, and verification results to the user.
+- **Explicit User Approval:** Explicitly ask for user review and approval. Do NOT stage or commit until the user confirms.
 
 ### 6. Git Commit
-Once approved by the user, stage only the relevant implementation and test files:
+Once approved by the user, stage the implementation, tests, and documentation:
 ```bash
 git status
-git add rust/
-git commit -m "Implement Phase X: <Description>"
+git add rust/ docs/implementation/
+git commit -m "Implement Phase <N>: <Description>"
 ```
