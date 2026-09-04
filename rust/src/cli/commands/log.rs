@@ -1,6 +1,6 @@
 use crate::cli::commands::common::{find_repository_root, load_repository};
 use crate::cli::commands::CliError;
-use crate::core::replay::patch_result_version;
+use crate::core::replay::{canonical_integration_order, patch_result_version};
 use crate::presentation::{format_log, LogRecord, PresentationMode};
 
 /// Execute `snap log`.
@@ -8,8 +8,11 @@ pub fn cmd_log(mode: PresentationMode) -> Result<(), CliError> {
     let root = find_repository_root()?;
     let repo = load_repository(&root)?;
 
-    let entries: Vec<LogRecord> = repo
-        .patches
+    // SPEC §7.4: "Prints patches in reverse canonical integration order, one tab-separated line each"
+    let ordered_patches =
+        canonical_integration_order(&repo.patches, &repo.frontier).map_err(CliError::Replay)?;
+
+    let entries: Vec<LogRecord> = ordered_patches
         .iter()
         .rev()
         .map(|patch| {

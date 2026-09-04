@@ -22,7 +22,7 @@
 | `BUG-002` | `validate_repository` accepts patches containing duplicate change paths | `rust/src/core/validation.rs` | §4.2 | `test_bug_002_validate_repository_accepts_duplicate_change_paths` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-002_walkthrough.md)) |
 | `BUG-003` | HTTP client `decode_chunked` tolerates missing CRLF after chunk data and accepts truncated bodies | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_003_http_chunked_missing_crlf_should_error` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-003_walkthrough.md)) |
 | `BUG-004` | HTTP client `decode_chunked` fails to parse RFC 7230 chunk extensions | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.8 | `test_bug_004_http_chunked_fails_on_valid_chunk_extensions` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-004_walkthrough.md)) |
-| `BUG-005` | `cmd_log` traverses `repo.patches` in reverse author order instead of reverse canonical integration order | `rust/src/cli/commands/log.rs` | §7.4 | `test_bug_005_log_reverse_canonical_integration_order` | 🔴 `OPEN` (Failing reproducer confirmed) |
+| `BUG-005` | `cmd_log` traverses `repo.patches` in reverse author order instead of reverse canonical integration order | `rust/src/cli/commands/log.rs` | §7.4 | `test_bug_005_log_reverse_canonical_integration_order` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-005_walkthrough.md)) |
 | `BUG-006` | `cmd_revert` creates invalid empty `TextEditOp::Insert([])` when reverting/restoring an empty text file | `rust/src/cli/commands/revert.rs` | §4.4, §7.7 | `test_bug_006_revert_empty_text_file_from_absent` | 🔴 `OPEN` (Failing reproducer confirmed) |
 | `BUG-007` | HTTP client `fetch_repository` ignores `Content-Length` and accepts prematurely truncated response bodies | `rust/src/http/client.rs` | RFC 7230 §3.3.3 / SPEC §7.1, §7.8 | `test_bug_007_http_client_content_length_truncation_rejected` | 🔴 `OPEN` (Failing reproducer confirmed) |
 
@@ -130,7 +130,13 @@
 - **Expected Behavior:**
   `snap log` must determine canonical integration order (§6.1) starting from the empty tree and version, and print the resulting patches in exact reverse canonical integration order (newest integrated patch first).
 - **Reproducer:** [`test_bug_005_log_reverse_canonical_integration_order`](../../rust/tests/bug_reproductions.rs)
-- **Status:** 🔴 `OPEN` — Reproducer confirmed failing (`SPEC §7.4 requires reverse canonical integration order: child commit Alice must appear first, but line 0 was: (bob@example.com->1)`).
+- **Resolution:**
+  - Implemented `canonical_integration_order` in `rust/src/core/replay.rs` conforming to SPEC §6.1.
+  - Refactored `cmd_log` in `rust/src/cli/commands/log.rs` to traverse `canonical_integration_order` in reverse (`ordered_patches.iter().rev()`).
+  - Added permanent unit regression test `test_regression_bug_005_canonical_integration_order` in `rust/src/core/replay.rs`.
+  - Annotated reproducer `test_bug_005` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (51/51 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-005_walkthrough.md`](resolution_BUG-005_walkthrough.md).
 
 ---
 

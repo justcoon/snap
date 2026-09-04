@@ -116,14 +116,14 @@ pub fn patch_result_version(patch: &Patch) -> Version {
     Version::from_map_unchecked(entries)
 }
 
-/// Materialize the exact canonical file tree and auto-resolution warnings
-/// for a target version V from a set of patches according to SPEC §6.
-pub fn materialize_version(
-    patches: &[Patch],
+/// Compute the sequence of patches in canonical integration order for a target version V
+/// according to SPEC §6.1.
+pub fn canonical_integration_order<'a>(
+    patches: &'a [Patch],
     target: &Version,
-) -> Result<(FileTree, BTreeSet<ResolutionWarning>), ReplayError> {
+) -> Result<Vec<&'a Patch>, ReplayError> {
     // 1. Select every patch (c, n) where n <= V[c] (§6.1)
-    let mut selected_map: BTreeMap<(ContributorId, u64), &Patch> = BTreeMap::new();
+    let mut selected_map: BTreeMap<(ContributorId, u64), &'a Patch> = BTreeMap::new();
     for p in patches {
         if p.revision <= target.get(&p.author) {
             selected_map.insert((p.author.clone(), p.revision), p);
@@ -142,19 +142,13 @@ pub fn materialize_version(
         }
     }
 
-    let mut current_tree = FileTree::new();
-    let mut integrated_v = Version::empty();
     let mut integrated_dots: HashSet<(ContributorId, u64)> = HashSet::new();
-    let mut all_warnings: BTreeSet<ResolutionWarning> = BTreeSet::new();
-
-    // Cache of materialized base trees keyed by version
-    let mut tree_cache: BTreeMap<Version, FileTree> = BTreeMap::new();
-    tree_cache.insert(Version::empty(), FileTree::new());
+    let mut order: Vec<&'a Patch> = Vec::with_capacity(selected_map.len());
 
     // Loop until all selected patches are integrated
     while integrated_dots.len() < selected_map.len() {
         // Find ready patches
-        let mut ready_patches: Vec<&Patch> = Vec::new();
+        let mut ready_patches: Vec<&'a Patch> = Vec::new();
         for ((author, rev), patch) in &selected_map {
             if integrated_dots.contains(&(author.clone(), *rev)) {
                 continue;
@@ -165,7 +159,7 @@ pub fn materialize_version(
                 .iter()
                 .all(|(ba, br)| integrated_dots.contains(&(ba.clone(), *br)));
             if base_ready {
-                ready_patches.push(patch);
+                ready_patches.push(*patch);
             }
         }
 
@@ -190,7 +184,30 @@ pub fn materialize_version(
         });
 
         let patch = ready_patches[0];
+        order.push(patch);
+        integrated_dots.insert((patch.author.clone(), patch.revision));
+    }
 
+    Ok(order)
+}
+
+/// Materialize the exact canonical file tree and auto-resolution warnings
+/// for a target version V from a set of patches according to SPEC §6.
+pub fn materialize_version(
+    patches: &[Patch],
+    target: &Version,
+) -> Result<(FileTree, BTreeSet<ResolutionWarning>), ReplayError> {
+    let order = canonical_integration_order(patches, target)?;
+
+    let mut current_tree = FileTree::new();
+    let mut integrated_v = Version::empty();
+    let mut all_warnings: BTreeSet<ResolutionWarning> = BTreeSet::new();
+
+    // Cache of materialized base trees keyed by version
+    let mut tree_cache: BTreeMap<Version, FileTree> = BTreeMap::new();
+    tree_cache.insert(Version::empty(), FileTree::new());
+
+    for patch in order {
         // Materialize exact base tree B
         let base_tree = if let Some(cached) = tree_cache.get(&patch.base) {
             cached.clone()
@@ -207,7 +224,6 @@ pub fn materialize_version(
         // Update integrated state
         let result_v = patch_result_version(patch);
         integrated_v = integrated_v.join(&result_v);
-        integrated_dots.insert((patch.author.clone(), patch.revision));
 
         tree_cache.insert(integrated_v.clone(), current_tree.clone());
     }
@@ -426,6 +442,44 @@ fn integrate_single_patch(
 mod tests {
     use super::*;
     use crate::core::patch::TextEditOp;
+
+    #[test]
+    fn test_regression_bug_005_canonical_integration_order() {
+        let author_alice = ContributorId::parse("alice@example.com").unwrap();
+        let author_bob = ContributorId::parse("bob@example.com").unwrap();
+
+        let patch_bob = Patch {
+            author: author_bob.clone(),
+            revision: 1,
+            base: Version::empty(),
+            message: "root commit by bob".to_string(),
+            changes: vec![Change::Put {
+                path: "file.txt".to_string(),
+                content: BASE64_STANDARD.encode(b"bob"),
+            }],
+        };
+
+        let patch_alice = Patch {
+            author: author_alice.clone(),
+            revision: 1,
+            base: Version::parse("(bob@example.com->1)").unwrap(),
+            message: "child commit by alice".to_string(),
+            changes: vec![Change::Put {
+                path: "file.txt".to_string(),
+                content: BASE64_STANDARD.encode(b"alice"),
+            }],
+        };
+
+        let target = Version::parse("(alice@example.com->1,bob@example.com->1)").unwrap();
+        // In repo.patches, Alice is first by ContributorId sort order
+        let patches = vec![patch_alice.clone(), patch_bob.clone()];
+
+        let order = canonical_integration_order(&patches, &target).unwrap();
+        assert_eq!(order.len(), 2);
+        // Canonical integration order must integrate Bob first (base empty), then Alice (base Bob)
+        assert_eq!(order[0].author, author_bob);
+        assert_eq!(order[1].author, author_alice);
+    }
 
     #[test]
     fn test_scenario_e1_namespace_conflict_resolution() {

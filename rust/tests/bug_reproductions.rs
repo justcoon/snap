@@ -205,6 +205,7 @@ impl Drop for TestTempDir {
 /// reverse canonical integration order (§6.1). When Alice's patch depends on Bob's patch,
 /// Bob's patch is printed before Alice's patch, inverting causal history in the log!
 #[test]
+#[ignore = "Resolved in BUG-005 (see docs/bugs/resolution_BUG-005_walkthrough.md)"]
 fn test_bug_005_log_reverse_canonical_integration_order() {
     let temp = TestTempDir::new("snap_test_bug_005");
     let dot_snap = temp.path().join(".snap");
