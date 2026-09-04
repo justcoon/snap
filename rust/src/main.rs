@@ -9,6 +9,7 @@
 )]
 
 pub mod core;
+pub mod fs;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
