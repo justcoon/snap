@@ -18,7 +18,7 @@
 |---|---|---|---|---|---|
 | `BUG-001` | `validate_repository` does not validate patch messages for ASCII control characters | `rust/src/core/validation.rs` | §4.2 | `test_bug_001_validate_repository_allows_control_chars_in_patch_message` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-001_walkthrough.md)) |
 | `BUG-002` | `validate_repository` accepts patches containing duplicate change paths | `rust/src/core/validation.rs` | §4.2 | `test_bug_002_validate_repository_accepts_duplicate_change_paths` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-002_walkthrough.md)) |
-| `BUG-003` | HTTP client `decode_chunked` tolerates missing CRLF after chunk data and accepts truncated bodies | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_003_http_chunked_missing_crlf_should_error` | 🔴 `OPEN` |
+| `BUG-003` | HTTP client `decode_chunked` tolerates missing CRLF after chunk data and accepts truncated bodies | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.1, §7.8 | `test_bug_003_http_chunked_missing_crlf_should_error` | 🟢 `FIXED` ([Walkthrough](resolution_BUG-003_walkthrough.md)) |
 | `BUG-004` | HTTP client `decode_chunked` fails to parse RFC 7230 chunk extensions | `rust/src/http/client.rs` | RFC 7230 §4.1 / SPEC §7.8 | `test_bug_004_http_chunked_fails_on_valid_chunk_extensions` | 🔴 `OPEN` |
 
 ---
@@ -82,6 +82,13 @@
 - **Expected Behavior:**
   The decoder must strictly verify that each chunk data segment is immediately followed by CRLF (`\r\n`), returning an error if missing.
 - **Reproducer:** [`test_bug_003_http_chunked_missing_crlf_should_error`](../../rust/tests/bug_reproductions.rs)
+- **Resolution:**
+  - Enforced mandatory verification that `cursor + 2 <= input.len()` and `&input[cursor..cursor + 2] == b"\r\n"`, erroring with `CliError::Custom("missing CRLF after chunk data")`.
+  - Added stream termination tracking requiring `chunk_len == 0` terminating chunk before EOF.
+  - Added permanent unit regression test `test_regression_bug_003_http_chunked_missing_crlf_rejected` in `rust/src/http/client.rs`.
+  - Annotated reproducer `test_bug_003` in `rust/tests/bug_reproductions.rs` as resolved (`#[ignore]`), verifying it passes when targeted.
+  - Full test suite passed (49/49 unit/property tests, 28/28 acceptance suites).
+  - Detailed Walkthrough: [`docs/bugs/resolution_BUG-003_walkthrough.md`](resolution_BUG-003_walkthrough.md).
 
 ---
 

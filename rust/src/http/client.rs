@@ -141,6 +141,7 @@ pub fn fetch_repository_with_config(
 fn decode_chunked(input: &[u8]) -> Result<Vec<u8>, CliError> {
     let mut out = Vec::new();
     let mut cursor = 0;
+    let mut terminated = false;
     while cursor < input.len() {
         let crlf = input[cursor..]
             .windows(2)
@@ -153,6 +154,7 @@ fn decode_chunked(input: &[u8]) -> Result<Vec<u8>, CliError> {
             .map_err(|_| CliError::Custom("invalid chunk length hex".into()))?;
         cursor += crlf + 2;
         if chunk_len == 0 {
+            terminated = true;
             break;
         }
         if cursor + chunk_len > input.len() {
@@ -160,9 +162,15 @@ fn decode_chunked(input: &[u8]) -> Result<Vec<u8>, CliError> {
         }
         out.extend_from_slice(&input[cursor..cursor + chunk_len]);
         cursor += chunk_len;
-        if cursor + 2 <= input.len() && &input[cursor..cursor + 2] == b"\r\n" {
-            cursor += 2;
+        if cursor + 2 > input.len() || &input[cursor..cursor + 2] != b"\r\n" {
+            return Err(CliError::Custom("missing CRLF after chunk data".into()));
         }
+        cursor += 2;
+    }
+    if !terminated {
+        return Err(CliError::Custom(
+            "truncated chunked stream: missing terminating chunk".into(),
+        ));
     }
     Ok(out)
 }
@@ -213,5 +221,22 @@ mod tests {
         // Test 2: Status 302 fails
         let err = fetch_repository(&url).unwrap_err();
         assert!(format!("{err}").contains("HTTP 302"));
+    }
+
+    #[test]
+    fn test_regression_bug_003_http_chunked_missing_crlf_rejected() {
+        // Valid chunked payload with CRLF
+        let valid = b"4\r\ntest\r\n0\r\n\r\n";
+        assert_eq!(decode_chunked(valid).unwrap(), b"test");
+
+        // Missing CRLF after chunk data
+        let missing_crlf = b"4\r\ntest0\r\n\r\n";
+        let err = decode_chunked(missing_crlf).unwrap_err();
+        assert!(format!("{err}").contains("missing CRLF after chunk data"));
+
+        // Truncated chunked stream without terminating chunk
+        let truncated = b"4\r\ntest\r\n";
+        let err = decode_chunked(truncated).unwrap_err();
+        assert!(format!("{err}").contains("missing terminating chunk"));
     }
 }
