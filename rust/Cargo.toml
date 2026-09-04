@@ -16,3 +16,21 @@ httparse = "1.9"
 
 [dev-dependencies]
 proptest = "1.5"
+
+[lints.clippy]
+# Anti-Pattern 1: Unhandled Panics in Production
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+
+# Anti-Pattern 2: Unnecessary Clones
+redundant_clone = "warn"
+clone_on_ref_ptr = "warn"
+
+# Anti-Pattern 4: C-style Index Loops
+needless_range_loop = "warn"
+
+# Anti-Pattern 5: Mutex across await boundaries
+await_holding_lock = "warn"
+await_holding_refcell_ref = "warn"
+

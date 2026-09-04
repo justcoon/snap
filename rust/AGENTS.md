@@ -41,6 +41,19 @@ Keep responsibilities strictly partitioned across modules as outlined in [`plan.
 - **HTTP Mode (`src/http/`):** Synchronous, read-only snapshot server on `127.0.0.1` (`GET`/`HEAD` on `/repository.json`) and synchronous remote repository fetcher.
 - **CLI & Presentation (`src/cli/`, `src/presentation/`):** Strict positional argument parsing (rejecting misplaced flags or unknown options) and dual-mode formatting (byte-stable plain output vs ANSI SGR terminal styling).
 
+## Anti-Patterns & Idiomatic Rust Guidelines
+
+Avoid common anti-patterns across all modules:
+
+| Anti-Pattern | Why It's Bad | Idiomatic Correction |
+| :--- | :--- | :--- |
+| **Excessive `.unwrap()` / `.expect()`** | Causes runtime crashes (panics) on unexpected errors. | Propagate errors gracefully using the `?` operator. |
+| **Aggressive `.clone()`** | Generates hidden, expensive heap allocations to bypass the borrow checker. | Pass data by reference (`&T`) or slice (`&str`, `&[T]`). |
+| **"Stringly-Typed" Everything** | Uses `String` for structured data, inviting invalid states and validation bugs. | Enforce structural validity with strictly typed `enum` or `struct` definitions. |
+| **C-Style Index Loops** | Triggers runtime bounds checking on every single iteration. | Use high-performance iterators and `.enumerate()`. |
+| **Holding Mutexes Across `.await`** | Freezes asynchronous tasks, leading to runtime deadlocks. | Drop the lock guard explicitly or use block scopes before `.await`. |
+
 ## Scope discipline
 
 Snap’s surface is deliberately compact. Do not introduce branches, staging areas, checkout, push, authentication, background daemons, or unresolved conflict markers. Focus complexity entirely on deterministic behavior, exact validation, and passing both the internal test suite and the shared acceptance harness.
+

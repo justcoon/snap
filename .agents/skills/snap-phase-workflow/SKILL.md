@@ -32,6 +32,16 @@ Maintain strict separation of concerns in `rust/src/`:
 - **Strict Validation:** Enforce numeric bounds (e.g., JavaScript maximum safe integer `9007199254740991`), character casing, and schema invariants defensively.
 - **Determinism:** Ensure outputs, warnings, and error messages are identical across runs.
 - **No Extra Surface:** Do not add git-like concepts (branches, staging areas, checkout, push) not defined in `SPEC.md`.
+- **Rust Anti-Patterns to Avoid:**
+
+| Anti-Pattern | Why It's Bad | Idiomatic Correction |
+| :--- | :--- | :--- |
+| **Excessive `.unwrap()` / `.expect()`** | Causes runtime crashes (panics) on unexpected errors. | Propagate errors gracefully using the `?` operator. |
+| **Aggressive `.clone()`** | Generates hidden, expensive heap allocations to bypass the borrow checker. | Pass data by reference (`&T`) or slice (`&str`, `&[T]`). |
+| **"Stringly-Typed" Everything** | Uses `String` for structured data, inviting invalid states and validation bugs. | Enforce structural validity with strictly typed `enum` or `struct` definitions. |
+| **C-Style Index Loops** | Triggers runtime bounds checking on every single iteration. | Use high-performance iterators and `.enumerate()`. |
+| **Holding Mutexes Across `.await`** | Freezes asynchronous tasks, leading to runtime deadlocks. | Drop the lock guard explicitly or use block scopes before `.await`. |
+
 
 ### 4. Verification & Testing Hierarchy
 Run the verification hierarchy before considering the phase complete:
